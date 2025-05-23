@@ -162,5 +162,4 @@ def main(_):
 
 
 if __name__ == "__main__":
-    setproctitle("debug@zhengyu")
     app.run(main)
