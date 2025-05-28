@@ -1,6 +1,6 @@
 # LLM Graph Probing
 
-Graph probing is a tool for learning the functional connectivity topology of neurons in large language models (LLMs) and relating it to language generation performance. The project was initially described in the paper ***"Learning Neural Topology of Language Models with Graph Probing"***.
+Graph probing is a tool for learning the functional connectivity topology of neurons in large language models (LLMs) and relating it to language generation performance. The project was initially described in the paper [***"Learning Neural Topology of Language Models with Graph Probing"***](https://davymorgan.github.io/assets/pdf/LLM-graph-probing.pdf).
 
 ![Loading Model Overview](assets/graph_probing.png "Model Overview")
 ---
