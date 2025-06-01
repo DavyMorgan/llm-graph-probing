@@ -104,3 +104,5 @@ python -m graph_matching.eval --dataset_filename <dataset_filename> --llm_model_
 ```
 All parameters are the same as previous steps.
 
+## License
+Please see the [license](LICENSE) for further details.
