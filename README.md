@@ -104,5 +104,16 @@ python -m graph_matching.eval --dataset_filename <dataset_filename> --llm_model_
 ```
 All parameters are the same as previous steps.
 
+## Citation
+If you use this code in your project, please consider citing the following paper:
+```bibtex
+@article{zheng2025probing,
+  title={Probing Neural Topology of Large Language Models}, 
+  author={Zheng, Yu and Yuan, Yuan and Li, Yong and Santi, Paolo},
+  journal={arXiv preprint arXiv:2506.01042},
+  year={2025}
+}
+```
+
 ## License
 Please see the [license](LICENSE) for further details.
