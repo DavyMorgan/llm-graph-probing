@@ -78,7 +78,7 @@ def get_brain_network_pair_dataloader(
     batch_size=32,
     eval_batch_size=32,
     num_workers=0,
-    prefatch_factor=2,
+    prefetch_factor=2,
     test_set_ratio=0.2,
     in_memory=True,
     shuffle=True,
@@ -135,7 +135,7 @@ def get_brain_network_pair_dataloader(
         shuffle=shuffle,
         follow_batch=['x_llm_1', 'x_llm_2'],
         num_workers=num_workers,
-        prefetch_factor=prefatch_factor if num_workers > 0 else None,
+        prefetch_factor=prefetch_factor if num_workers > 0 else None,
         **kwargs
     )
     test_data_loader = DataLoader(
@@ -144,7 +144,7 @@ def get_brain_network_pair_dataloader(
         shuffle=False,
         follow_batch=['x_llm_1', 'x_llm_2'],
         num_workers=num_workers,
-        prefetch_factor=prefatch_factor if num_workers > 0 else None,
+        prefetch_factor=prefetch_factor if num_workers > 0 else None,
         **kwargs
     )
 

@@ -22,7 +22,7 @@ flags.DEFINE_integer("llm_layer_1", 7, "The layer of the LLM model.")
 flags.DEFINE_integer("llm_layer_2", 7, "The layer of the LLM model.")
 flags.DEFINE_integer("batch_size", 16, "The batch size.")
 flags.DEFINE_integer("num_workers", 4, "Number of workers.")
-flags.DEFINE_integer("prefatch_factor", 2, "Prefetch factor.")
+flags.DEFINE_integer("prefetch_factor", 2, "Prefetch factor.")
 flags.DEFINE_integer("eval_batch_size", 16, "The evaluation batch size.")
 flags.DEFINE_integer("num_channels", 32, "The number of channels in GNN probes.")
 flags.DEFINE_integer("num_layers", 1, "The number of GNN layers.")
@@ -131,7 +131,7 @@ def main(_):
         batch_size=FLAGS.batch_size,
         eval_batch_size=FLAGS.eval_batch_size,
         num_workers=FLAGS.num_workers,
-        prefatch_factor=FLAGS.prefatch_factor,
+        prefetch_factor=FLAGS.prefetch_factor,
         test_set_ratio=FLAGS.test_set_ratio,
         in_memory=FLAGS.in_memory,
     )
