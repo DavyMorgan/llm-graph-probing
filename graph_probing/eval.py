@@ -7,7 +7,7 @@ import torch
 torch.set_default_dtype(torch.float32)
 
 from graph_probing.dataset import get_brain_network_dataloader
-from graph_probing.model import GCNRegressor, GCNRegressorLinear
+from graph_probing.model import GCNRegressor
 from graph_probing.utils import llm_model_num_nodes_map, eval_model
 
 
@@ -50,22 +50,14 @@ def main(_):
         in_memory=FLAGS.in_memory,
     )
 
-    if not FLAGS.linear_probing:
-        model = GCNRegressor(
-            num_nodes=llm_model_num_nodes_map[FLAGS.llm_model_name],
-            hidden_channels=FLAGS.num_channels,
-            out_channels=FLAGS.num_channels,
-            num_layers=FLAGS.num_layers,
-            dropout=FLAGS.dropout,
-        ).to(device)
-    else:
-        model = GCNRegressorLinear(
-            num_nodes=llm_model_num_nodes_map[FLAGS.llm_model_name],
-            hidden_channels=FLAGS.num_channels,
-            out_channels=FLAGS.num_channels,
-            num_layers=FLAGS.num_layers,
-            dropout=FLAGS.dropout,
-        ).to(device)
+    model = GCNRegressor(
+        num_nodes=llm_model_num_nodes_map[FLAGS.llm_model_name],
+        hidden_channels=FLAGS.num_channels,
+        out_channels=FLAGS.num_channels,
+        num_layers=FLAGS.num_layers,
+        linear=FLAGS.linear_probing,
+        dropout=FLAGS.dropout,
+    ).to(device)
     if FLAGS.ckpt_step == -1:
         save_model_name = f"{FLAGS.llm_model_name}"
     else:
