@@ -1,8 +1,8 @@
 import os
 from tqdm import tqdm
 
-import pickle
 import numpy as np
+import pandas as pd
 
 import torch
 from torch_geometric.data import Data, Dataset
@@ -84,10 +84,9 @@ def get_brain_network_pair_dataloader(
     shuffle=True,
     **kwargs
 ):
-    with open(dataset_filename, "rb") as f:
-        data = pickle.load(f)
-        sentences = data["sentences"]
-        num_sentences = len(sentences)
+    data = pd.read_csv(dataset_filename)
+    sentences = data["sentences"].to_list()
+    num_sentences = len(sentences)
 
     if ckpt_step_1 == -1:
         path_1 = os.path.join(dataset_path, llm_model_name_1)

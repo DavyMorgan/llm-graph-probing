@@ -1,24 +1,23 @@
 from absl import app, flags
+from multiprocessing import Process, Queue
 import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-import pickle
-from setproctitle import setproctitle
 from tqdm import tqdm
 
-from multiprocessing import Process, Queue
 import numpy as np
+import pandas as pd
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
-from graph_matching.utils import hf_model_name_map
+from utils.constants import hf_model_name_map
 
-flags.DEFINE_string("dataset_filename", "data/graph_matching/pile-10k.pkl", "The dataset filename.")
+flags.DEFINE_string("dataset_filename", "data/graph_matching/openwebtext-10k.csv", "The dataset filename.")
 flags.DEFINE_string("llm_model_name", "gpt2", "The name of the LLM model.")
 flags.DEFINE_integer("ckpt_step", -1, "The checkpoint step.")
-flags.DEFINE_multi_integer("llm_layer", [0], "Layer IDs for network construction.")
-flags.DEFINE_integer("batch_size", 8, "Batch size.")
-flags.DEFINE_multi_integer("gpu_id", [7], "The GPU ID.")
-flags.DEFINE_integer("num_workers", 10, "Number of processes for computing networks.")
+flags.DEFINE_multi_integer("llm_layer", [6], "Layer IDs for network construction.")
+flags.DEFINE_integer("batch_size", 32, "Batch size.")
+flags.DEFINE_multi_integer("gpu_id", [0, 1], "The GPU ID.")
+flags.DEFINE_integer("num_workers", 30, "Number of processes for computing networks.")
 flags.DEFINE_boolean("resume", False, "Resume from the last generation.")
 FLAGS = flags.FLAGS
 
@@ -44,35 +43,34 @@ def run_llm(
         tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side=padding_side, revision=f'step{ckpt_step}')
         model = AutoModelForCausalLM.from_pretrained(model_name, revision=f'step{ckpt_step}', device_map=f"cuda:{gpu_id}")
 
-    with open(dataset_filename, "rb") as f:
-        data = pickle.load(f)
-        original_input_texts = data["sentences"]
-        num_sentences = len(original_input_texts)
-        if not resume:
-            input_texts = original_input_texts[rank::num_producers]
-            sentence_indices = list(range(rank, num_sentences, num_producers))
-        else:
-            input_texts = []
-            sentence_indices = []
-            for sentence_idx in range(rank, num_sentences, num_producers):
-                if not os.path.exists(f"{p_save_path}/{sentence_idx}"):
-                    input_texts.append(original_input_texts[sentence_idx])
-                    sentence_indices.append(sentence_idx)
+    data = pd.read_csv(dataset_filename)
+    original_input_texts = data["sentences"].tolist()
+    num_sentences = len(original_input_texts)
+    if not resume:
+        input_texts = original_input_texts[rank::num_producers]
+        sentence_indices = list(range(rank, num_sentences, num_producers))
+    else:
+        input_texts = []
+        sentence_indices = []
+        for sentence_idx in range(rank, num_sentences, num_producers):
+            if not os.path.exists(f"{p_save_path}/{sentence_idx}"):
+                input_texts.append(original_input_texts[sentence_idx])
+                sentence_indices.append(sentence_idx)
 
     if len(input_texts) > 0:
         tokenizer.pad_token = tokenizer.eos_token
-        inputs = tokenizer(input_texts, padding=True, truncation=False, return_tensors="pt")
 
         with torch.no_grad():
-            for i in tqdm(range(0, len(inputs["input_ids"]), batch_size), position=rank, desc=f"Producer {rank}"):
+            for i in tqdm(range(0, len(input_texts), batch_size), position=rank, desc=f"Producer {rank}"):
+                inputs = tokenizer(input_texts[i:i+batch_size], padding=True, truncation=False, return_tensors="pt")
                 model_output = model(
-                    input_ids=inputs["input_ids"][i:i+batch_size].to(model.device),
-                    attention_mask=inputs["attention_mask"][i:i+batch_size].to(model.device),
+                    input_ids=inputs["input_ids"].to(model.device),
+                    attention_mask=inputs["attention_mask"].to(model.device),
                     output_hidden_states=True,
                 )
                 batch_hidden_states = torch.stack(model_output.hidden_states[1:]).cpu().numpy()  # layer activations (num_layers, B, L, D)
                 batch_hidden_states = batch_hidden_states[layer_list]
-                batch_attention_mask = inputs["attention_mask"][i:i+batch_size].numpy()  # (B, L)
+                batch_attention_mask = inputs["attention_mask"].numpy()  # (B, L)
                 actual_batch_size = batch_hidden_states.shape[1]
                 batch_sentence_indices = sentence_indices[i:i+actual_batch_size]
                 queue.put((batch_hidden_states, batch_attention_mask, batch_sentence_indices))

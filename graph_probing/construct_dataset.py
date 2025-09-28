@@ -1,24 +1,24 @@
 from absl import app, flags
 import itertools
 import os
-import pickle
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 from tqdm import tqdm
 
 from datasets import load_dataset
+from evaluate import load
+perplexity_revised = load("graph_probing/perplexity_revised.py", module_type="metric")
 import numpy as np
+import pandas as pd
 import torch.multiprocessing as mp
 from transformers import AutoTokenizer
 
-from evaluate import load
-perplexity_revised = load("graph_probing/perplexity_revised.py", module_type="metric")
+from utils.constants import hf_model_name_map
 
-from graph_probing.utils import hf_model_name_map
-
-flags.DEFINE_enum("dataset", "openwebtext", ["openwebtext", "pile"], "The name of the dataset.")
+flags.DEFINE_string("dataset", "openwebtext", "The name of the dataset.")
 flags.DEFINE_string("llm_model_name", "gpt2", "The name of the LLM model.")
 flags.DEFINE_integer("ckpt_step", -1, "The checkpoint step.")
 flags.DEFINE_integer("batch_size", 32, "Batch size.")
-flags.DEFINE_multi_integer("gpu_id", [7], "The GPU ID.")
+flags.DEFINE_multi_integer("gpu_id", [0, 1], "The GPU ID.")
 FLAGS = flags.FLAGS
 
 
@@ -76,21 +76,16 @@ def run_ppl(rank, queue, model_name, revision, gpu_id, batch_size, all_sentences
 def main(_):
     if FLAGS.dataset == "openwebtext":
         dataset = load_dataset("sam2ai/openwebtext-10k", split="train", streaming=False)
-    elif FLAGS.dataset == "pile":
-        dataset = load_dataset("NeelNanda/pile-10k", split="train", streaming=False)
     else:
-        raise ValueError(f"Dataset {FLAGS.dataset} not supported.")
+        raise ValueError(f"Unknown dataset: {FLAGS.dataset}")
 
-    hf_model_name = hf_model_name_map[FLAGS.llm_model_name]
-    revision = "main" if FLAGS.ckpt_step == -1 else f"step{FLAGS.ckpt_step}"
-    if hf_model_name.startswith("EleutherAI") and revision != "main":
-        save_path = f"data/graph_probing/{FLAGS.dataset}-10k-{FLAGS.llm_model_name}-{revision}.pkl"
-    else:
-        save_path = f"data/graph_probing/{FLAGS.dataset}-10k-{FLAGS.llm_model_name}.pkl"
     dataset = dataset.filter(lambda x: x["text"] != "")
     dataset = dataset.map(split_examples, remove_columns=dataset.column_names)
     all_sentences = list(itertools.chain(*dataset["sentences"]))
     p_sentence_indices = np.array_split(np.arange(len(all_sentences)), len(FLAGS.gpu_id))
+
+    hf_model_name = hf_model_name_map[FLAGS.llm_model_name]
+    revision = "main" if FLAGS.ckpt_step == -1 else f"step{FLAGS.ckpt_step}"
 
     with mp.Manager() as manager:
         queue = manager.Queue()
@@ -127,9 +122,13 @@ def main(_):
         "perplexities": saved_perplexities
     }
 
+    if hf_model_name.startswith("EleutherAI") and revision != "main":
+        save_path = f"data/graph_probing/{FLAGS.dataset}-10k-{FLAGS.llm_model_name}-{revision}.csv"
+    else:
+        save_path = f"data/graph_probing/{FLAGS.dataset}-10k-{FLAGS.llm_model_name}.csv"
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    with open(save_path, "wb") as f:
-        pickle.dump(saved_dataset, f)
+    df = pd.DataFrame(saved_dataset)
+    df.to_csv(save_path, index=False)
 
 
 if __name__ == "__main__":

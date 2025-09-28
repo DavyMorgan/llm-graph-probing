@@ -1,6 +1,5 @@
 from absl import app, flags, logging
 import os
-from setproctitle import setproctitle
 from tqdm import tqdm
 
 import torch
@@ -10,16 +9,17 @@ from torch.utils.tensorboard import SummaryWriter
 from graph_matching.dataset import get_brain_network_pair_dataloader
 from graph_matching.loss import contrastive_loss_cosine
 from graph_matching.model import GraphMatchingModel
-from graph_matching.utils import llm_model_num_nodes_map, test_fn
+from graph_matching.utils import test_fn
+from utils.model_utils import get_num_nodes
 
-flags.DEFINE_string("dataset_filename", "data/graph_matching/pile-10k.pkl", "The dataset filename.")
+flags.DEFINE_string("dataset_filename", "data/graph_matching/openwebtext-10k.csv", "The dataset filename.")
 flags.DEFINE_float("network_density", 1.0, "The density of the network.")
 flags.DEFINE_string("llm_model_name_1", "gpt2", "The name of the first LLM model.")
-flags.DEFINE_string("llm_model_name_2", "pythia-160m", "The name of the second LLM model.")
+flags.DEFINE_string("llm_model_name_2", "gpt2", "The name of the second LLM model.")
 flags.DEFINE_integer("ckpt_step_1", -1, "The checkpoint step.")
 flags.DEFINE_integer("ckpt_step_2", -1, "The checkpoint step.")
-flags.DEFINE_integer("llm_layer_1", 7, "The layer of the LLM model.")
-flags.DEFINE_integer("llm_layer_2", 7, "The layer of the LLM model.")
+flags.DEFINE_integer("llm_layer_1", 6, "The layer of the LLM model.")
+flags.DEFINE_integer("llm_layer_2", 6, "The layer of the LLM model.")
 flags.DEFINE_integer("batch_size", 16, "The batch size.")
 flags.DEFINE_integer("num_workers", 4, "Number of workers.")
 flags.DEFINE_integer("prefetch_factor", 2, "Prefetch factor.")
@@ -33,7 +33,7 @@ flags.DEFINE_integer("num_epochs", 100, "The number of epochs.")
 flags.DEFINE_float("test_set_ratio", 0.2, "The ratio of the test set.")
 flags.DEFINE_boolean("in_memory", True, "In-memory dataset.")
 flags.DEFINE_integer("early_stop_patience", 20, "The patience for early stopping.")
-flags.DEFINE_integer("gpu_id", 7, "The GPU ID.")
+flags.DEFINE_integer("gpu_id", 0, "The GPU ID.")
 FLAGS = flags.FLAGS
 
 
@@ -137,8 +137,8 @@ def main(_):
     )
 
     model = GraphMatchingModel(
-        num_nodes_llm_1=llm_model_num_nodes_map[FLAGS.llm_model_name_1],
-        num_nodes_llm_2=llm_model_num_nodes_map[FLAGS.llm_model_name_2],
+        num_nodes_llm_1=get_num_nodes(FLAGS.llm_model_name_1, FLAGS.llm_layer_1),
+        num_nodes_llm_2=get_num_nodes(FLAGS.llm_model_name_2, FLAGS.llm_layer_2),
         hidden_channels=FLAGS.num_channels,
         out_channels=FLAGS.num_channels,
         num_layers=FLAGS.num_layers,
@@ -170,5 +170,4 @@ def main(_):
 
 
 if __name__ == "__main__":
-    setproctitle("llm graph matching")
     app.run(main)

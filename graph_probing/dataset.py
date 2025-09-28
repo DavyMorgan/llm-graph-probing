@@ -1,13 +1,32 @@
 import os
-import pickle
 from tqdm import tqdm
 
 import numpy as np
-
+import pandas as pd
 import torch
+from torch.utils.data import Dataset as TorchDataset
+from torch.utils.data import DataLoader as TorchDataLoader
 from torch_geometric.data import Data, Dataset
 from torch_geometric.loader import DataLoader
 from torch_geometric.utils import dense_to_sparse
+
+
+def prepare_data(dataset_filename, ckpt_step, llm_model_name, dataset_path, test_set_ratio, seed):
+    data = pd.read_csv(dataset_filename)
+    perplexities = data["perplexities"].to_numpy(dtype=np.float32)
+    perplexities = (perplexities - perplexities.min()) / (perplexities.max() - perplexities.min())
+    num_sentences = len(perplexities)
+
+    if ckpt_step == -1:
+        path = os.path.join(dataset_path, llm_model_name)
+    else:
+        path = os.path.join(dataset_path, f"{llm_model_name}_step{ckpt_step}")
+    
+    generator = torch.Generator().manual_seed(seed)
+    test_set_size = int(num_sentences * test_set_ratio)
+    train_data_split, test_data_split = torch.utils.data.random_split(
+        list(range(num_sentences)), [num_sentences - test_set_size, test_set_size], generator=generator)
+    return train_data_split, test_data_split, perplexities, path
 
 
 def wrap_data(path, network_id, llm_layer, perplexity, network_density, from_sparse_data=False):
@@ -69,28 +88,22 @@ def get_brain_network_dataloader(
     test_set_ratio=0.2,
     in_memory=True,
     shuffle=True,
+    seed=42,
     **kwargs
 ):
-    with open(dataset_filename, "rb") as f:
-        data = pickle.load(f)
-        sentences = data["sentences"]
-        perplexities = np.array(data["perplexities"], dtype=np.float32)
-        perplexities = (perplexities - perplexities.min()) / (perplexities.max() - perplexities.min())
-        num_sentences = len(sentences)
 
-    if ckpt_step == -1:
-        path = os.path.join(dataset_path, llm_model_name)
-    else:
-        path = os.path.join(dataset_path, f"{llm_model_name}_step{ckpt_step}")
-
-    generator = torch.Generator().manual_seed(42)
-    test_set_size = int(num_sentences * test_set_ratio)
-    train_data_split, test_data_split = torch.utils.data.random_split(
-        list(range(num_sentences)), [num_sentences - test_set_size, test_set_size], generator=generator)
+    train_data_split, test_data_split, perplexities, path = prepare_data(
+        dataset_filename,
+        ckpt_step,
+        llm_model_name,
+        dataset_path,
+        test_set_ratio,
+        seed,
+    )
 
     if in_memory:
         data_list = []
-        for network_id in tqdm(range(num_sentences), desc="Loading LLM brain data"):
+        for network_id in tqdm(range(len(perplexities)), desc="Loading LLM brain data"):
             data = wrap_data(path, network_id, llm_layer, perplexities[network_id], network_density, from_sparse_data)
             data_list.append(data)
 
@@ -123,6 +136,103 @@ def get_brain_network_dataloader(
         **kwargs
     )
     test_data_loader = DataLoader(
+        test_dataset,
+        batch_size=eval_batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        prefetch_factor=prefetch_factor if num_workers > 0 else None,
+        **kwargs
+    )
+
+    return train_data_loader, test_data_loader
+
+
+class BrainNetworkLinearDataset(TorchDataset):
+    def __init__(self, sentences_id, dataset_path, perplexities, llm_layer, feature_name, feature_density=1.0):
+        super().__init__()
+        self.sentences_id = sentences_id
+        self.dataset_path = dataset_path
+        self.perplexities = perplexities
+        self.llm_layer = llm_layer
+        self.feature_name = feature_name
+        self.feature_density = feature_density
+
+        self.loaded_data = []
+        for idx in tqdm(range(len(self.sentences_id)), desc="Loading linear data"):
+            self.loaded_data.append(self._load_data(idx))
+
+    def __len__(self):
+        return len(self.sentences_id)
+
+    def _load_data(self, idx):
+        network_id = self.sentences_id[idx]
+        feature_path = os.path.join(self.dataset_path, str(network_id), f"layer_{self.llm_layer}_{self.feature_name}.npy")
+        feature = torch.from_numpy(np.load(feature_path)).float()
+        if self.feature_name == "corr":
+            triu_indices = torch.triu_indices(feature.shape[0], feature.shape[1], offset=1)
+            feature = feature[triu_indices[0], triu_indices[1]]
+        if self.feature_density < 1.0:
+            threshold = torch.quantile(torch.abs(feature), 1 - self.feature_density)
+            feature[torch.abs(feature) < threshold] = 0
+        perplexity = torch.tensor([self.perplexities[idx]], dtype=torch.float32)
+        return feature, perplexity
+
+    def __getitem__(self, idx):
+        return self.loaded_data[idx]
+
+
+def get_brain_network_linear_dataloader(
+    dataset_filename,
+    feature_name,
+    feature_density=1.0,
+    llm_model_name="gpt2",
+    ckpt_step=-1,
+    llm_layer=0,
+    dataset_path="data/graph_probing",
+    batch_size=32,
+    eval_batch_size=32,
+    num_workers=4,
+    prefetch_factor=2,
+    test_set_ratio=0.2,
+    shuffle=True,
+    seed=42,
+    **kwargs
+):
+    train_data_split, test_data_split, perplexities, path = prepare_data(
+        dataset_filename,
+        ckpt_step,
+        llm_model_name,
+        dataset_path,
+        test_set_ratio,
+        seed,
+    )
+
+    train_dataset = BrainNetworkLinearDataset(
+        train_data_split,
+        path,
+        perplexities[train_data_split],
+        llm_layer,
+        feature_name,
+        feature_density=feature_density
+    )
+    test_dataset = BrainNetworkLinearDataset(
+        test_data_split,
+        path,
+        perplexities[test_data_split],
+        llm_layer,
+        feature_name,
+        feature_density=feature_density
+    )
+
+    train_data_loader = TorchDataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers,
+        prefetch_factor=prefetch_factor if num_workers > 0 else None,
+        **kwargs
+    )
+    test_data_loader = TorchDataLoader(
         test_dataset,
         batch_size=eval_batch_size,
         shuffle=False,

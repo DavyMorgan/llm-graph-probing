@@ -6,30 +6,6 @@ import torch
 from graph_matching.loss import contrastive_loss_cosine
 
 
-hf_model_name_map = {
-    "gpt2": "gpt2",
-    "pythia-160m": "EleutherAI/pythia-160m",
-    "pythia-160m-seed1": "EleutherAI/pythia-160m-seed1",
-    "pythia-160m-seed2": "EleutherAI/pythia-160m-seed2",
-    "pythia-160m-seed3": "EleutherAI/pythia-160m-seed3",
-    "qwen2.5-0.5b": "Qwen/Qwen2.5-0.5B",
-    "qwen2-0.5b": "Qwen/Qwen2-0.5B",
-    "qwen1.5-0.5b": "Qwen/Qwen1.5-0.5B",
-}
-
-
-llm_model_num_nodes_map = {
-    "gpt2": 768,
-    "pythia-160m": 768,
-    "pythia-160m-seed1": 768,
-    "pythia-160m-seed2": 768,
-    "pythia-160m-seed3": 768,
-    "qwen2.5-0.5b": 896,
-    "qwen2-0.5b": 896,
-    "qwen1.5-0.5b": 1024,
-}
-
-
 def test_fn(model, test_data_loader, device, temperature=1.0):
     model.eval()
     with torch.no_grad():
