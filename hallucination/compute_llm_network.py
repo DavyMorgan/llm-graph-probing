@@ -36,13 +36,16 @@ def get_word2vec_model():
     return _WORD2VEC_MODEL
 
 
-def compute_average_word2vec_embedding(text, model):
+def compute_word2vec_stats(text, model):
     # Tokenize text while keeping case and removing punctuation accents
     tokens = list(tokenize(text, lowercase=False, deacc=True))
     tokens_in_vocab = [token for token in tokens if token in model.key_to_index]
     if not tokens_in_vocab:
-        return np.zeros(model.vector_size, dtype=np.float32)
-    return model.get_mean_vector(tokens_in_vocab).astype(np.float32)
+        embedding = np.zeros(model.vector_size, dtype=np.float32)
+    else:
+        embedding = model.get_mean_vector(tokens_in_vocab).astype(np.float32)
+    token_count = float(len(tokens))
+    return embedding, token_count
 
 
 def format_prompt(questions, answers, model_name, tokenizer):
@@ -104,10 +107,9 @@ def run_llm(
     if len(input_texts) > 0:
         tokenizer.pad_token = tokenizer.eos_token
         word2vec_model = get_word2vec_model()
-        sample_word2vec_embeddings = np.stack(
-            [compute_average_word2vec_embedding(text, word2vec_model) for text in input_texts],
-            axis=0,
-        )
+        word2vec_stats = [compute_word2vec_stats(text, word2vec_model) for text in input_texts]
+        sample_word2vec_embeddings = np.stack([embedding for embedding, _ in word2vec_stats], axis=0)
+        sample_word_token_counts = np.array([[count] for _, count in word2vec_stats], dtype=np.float32)
         
         with torch.no_grad():
             for i in tqdm(range(0, len(input_texts), batch_size), position=rank, desc=f"Producer {rank}"):
@@ -134,7 +136,8 @@ def run_llm(
                 batch_question_indices = question_indices[i:i+actual_batch_size]
 
                 batch_word2vec_embeddings = sample_word2vec_embeddings[i:i+actual_batch_size]
-                queue.put((batch_hidden_states_layer_average, batch_hidden_states, batch_attention_mask.numpy(), batch_question_indices, batch_labels, batch_word2vec_embeddings))
+                batch_word_token_counts = sample_word_token_counts[i:i+actual_batch_size]
+                queue.put((batch_hidden_states_layer_average, batch_hidden_states, batch_attention_mask.numpy(), batch_question_indices, batch_labels, batch_word2vec_embeddings, batch_word_token_counts))
 
 
 def run_corr(queue, layer_list, p_save_path, worker_idx, sparse=False, network_density=1.0):
@@ -144,7 +147,7 @@ def run_corr(queue, layer_list, p_save_path, worker_idx, sparse=False, network_d
             batch = queue.get(block=True)
             if batch == "STOP":
                 break
-            hidden_states_layer_average, hidden_states, attention_mask, question_indices, labels, word2vec_embeddings = batch
+            hidden_states_layer_average, hidden_states, attention_mask, question_indices, labels, word2vec_embeddings, word_token_counts = batch
             for i, question_idx in enumerate(question_indices):
                 sentence_attention_mask = attention_mask[i]
 
@@ -165,6 +168,7 @@ def run_corr(queue, layer_list, p_save_path, worker_idx, sparse=False, network_d
                 np.save(f"{p_dir_name}/layer_average_degree.npy", layer_average_degree)
 
                 np.save(f"{p_dir_name}/word2vec_average.npy", word2vec_embeddings[i])
+                np.save(f"{p_dir_name}/word2vec_token_count.npy", word_token_counts[i])
 
                 for j, layer_idx in enumerate(layer_list):
                     layer_hidden_states = hidden_states[j, i]

@@ -97,7 +97,7 @@ class TruthfulQALinearDataset(TorchDataset):
         self.ckpt_step = ckpt_step
         self.llm_layer = llm_layer
         self.feature_name = feature_name
-        if self.feature_name == "word2vec_average":
+        if self.feature_name in {"word2vec_average", "word2vec_token_count"}:
             self.dense_filename = f"{self.feature_name}.npy"
         elif self.llm_layer == -1:
             self.dense_filename = f"layer_average_{self.feature_name}.npy"
