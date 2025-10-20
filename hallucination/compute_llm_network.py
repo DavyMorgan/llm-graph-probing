@@ -7,6 +7,8 @@ from tqdm import tqdm
 import numpy as np
 import pandas as pd
 import torch
+import gensim.downloader as gensim_downloader
+from gensim.utils import tokenize
 
 from utils.constants import hf_model_name_map, BASE_MODELS, QWEN_CHAT_MODELS
 from utils.model_utils import load_tokenizer_and_model
@@ -23,6 +25,24 @@ flags.DEFINE_boolean("sparse", False, "Whether to generate sparse networks.")
 flags.DEFINE_float("network_density", 1.0, "The density of the network.")
 flags.DEFINE_boolean("random", False, "Whether to generate random data.")
 FLAGS = flags.FLAGS
+
+_WORD2VEC_MODEL = None
+
+
+def get_word2vec_model():
+    global _WORD2VEC_MODEL
+    if _WORD2VEC_MODEL is None:
+        _WORD2VEC_MODEL = gensim_downloader.load("word2vec-google-news-300")
+    return _WORD2VEC_MODEL
+
+
+def compute_average_word2vec_embedding(text, model):
+    # Tokenize text while keeping case and removing punctuation accents
+    tokens = list(tokenize(text, lowercase=False, deacc=True))
+    tokens_in_vocab = [token for token in tokens if token in model.key_to_index]
+    if not tokens_in_vocab:
+        return np.zeros(model.vector_size, dtype=np.float32)
+    return model.get_mean_vector(tokens_in_vocab).astype(np.float32)
 
 
 def format_prompt(questions, answers, model_name, tokenizer):
@@ -83,6 +103,11 @@ def run_llm(
 
     if len(input_texts) > 0:
         tokenizer.pad_token = tokenizer.eos_token
+        word2vec_model = get_word2vec_model()
+        sample_word2vec_embeddings = np.stack(
+            [compute_average_word2vec_embedding(text, word2vec_model) for text in input_texts],
+            axis=0,
+        )
         
         with torch.no_grad():
             for i in tqdm(range(0, len(input_texts), batch_size), position=rank, desc=f"Producer {rank}"):
@@ -108,7 +133,8 @@ def run_llm(
                 actual_batch_size = batch_hidden_states.shape[1]
                 batch_question_indices = question_indices[i:i+actual_batch_size]
 
-                queue.put((batch_hidden_states_layer_average, batch_hidden_states, batch_attention_mask.numpy(), batch_question_indices, batch_labels))
+                batch_word2vec_embeddings = sample_word2vec_embeddings[i:i+actual_batch_size]
+                queue.put((batch_hidden_states_layer_average, batch_hidden_states, batch_attention_mask.numpy(), batch_question_indices, batch_labels, batch_word2vec_embeddings))
 
 
 def run_corr(queue, layer_list, p_save_path, worker_idx, sparse=False, network_density=1.0):
@@ -118,7 +144,7 @@ def run_corr(queue, layer_list, p_save_path, worker_idx, sparse=False, network_d
             batch = queue.get(block=True)
             if batch == "STOP":
                 break
-            hidden_states_layer_average, hidden_states, attention_mask, question_indices, labels = batch
+            hidden_states_layer_average, hidden_states, attention_mask, question_indices, labels, word2vec_embeddings = batch
             for i, question_idx in enumerate(question_indices):
                 sentence_attention_mask = attention_mask[i]
 
@@ -137,6 +163,8 @@ def run_corr(queue, layer_list, p_save_path, worker_idx, sparse=False, network_d
 
                 layer_average_degree = np.abs(layer_average_corr).sum(axis=1)
                 np.save(f"{p_dir_name}/layer_average_degree.npy", layer_average_degree)
+
+                np.save(f"{p_dir_name}/word2vec_average.npy", word2vec_embeddings[i])
 
                 for j, layer_idx in enumerate(layer_list):
                     layer_hidden_states = hidden_states[j, i]
