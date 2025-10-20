@@ -3,6 +3,9 @@ from utils.constants import hf_model_name_map, QWEN_MODELS, QWEN_CHAT_MODELS, OP
 
 
 def get_num_nodes(llm_model_name, llm_layer, linear_probe_input=None):
+    if linear_probe_input == "word2vec_average":
+        return 300
+
     hf_model_name = hf_model_name_map[llm_model_name]
     if hf_model_name in [*QWEN_MODELS, *PYTHIA_MODELS]:
         config = AutoConfig.from_pretrained(hf_model_name)
@@ -53,4 +56,3 @@ def wrap_chat_template(input_texts, tokenizer, model_name):
     else:
         chat_texts = input_texts
     return chat_texts
-
