@@ -13,7 +13,22 @@ from gensim.utils import tokenize
 from utils.constants import hf_model_name_map, BASE_MODELS, QWEN_CHAT_MODELS
 from utils.model_utils import load_tokenizer_and_model
 
-flags.DEFINE_string("dataset_filename", "data/hallucination/truthfulqa-validation.csv", "The dataset filename.")
+flags.DEFINE_enum(
+    "dataset_name",
+    "truthfulqa",
+    ["truthfulqa", "halubench"],
+    "The dataset to process."
+)
+flags.DEFINE_string(
+    "truthfulqa_split",
+    "validation",
+    "Split name used when deriving the TruthfulQA CSV path."
+)
+flags.DEFINE_string(
+    "halubench_split",
+    "test",
+    "Split name used when deriving the HaluBench CSV path."
+)
 flags.DEFINE_string("llm_model_name", "qwen2.5-0.5b", "The name of the LLM model.")
 flags.DEFINE_integer("ckpt_step", -1, "The checkpoint step.")
 flags.DEFINE_multi_integer("llm_layer", [12], "The layer list.")
@@ -199,11 +214,24 @@ def run_corr(queue, layer_list, p_save_path, worker_idx, sparse=False, network_d
 
 
 def main(_):
+    if FLAGS.dataset_name == "truthfulqa":
+        dataset_key = "truthfulqa"
+        dataset_filename = os.path.join("data/hallucination", f"truthfulqa-{FLAGS.truthfulqa_split}.csv")
+    elif FLAGS.dataset_name == "halubench":
+        dataset_key = "halubench"
+        dataset_filename = os.path.join("data/hallucination", f"halubench-{FLAGS.halubench_split}.csv")
+    else:
+        raise ValueError(f"Unsupported dataset_name: {FLAGS.dataset_name}")
+
+    dataset_dir = os.path.join("data/hallucination", dataset_key)
+    os.makedirs(dataset_dir, exist_ok=True)
+
     model_name = FLAGS.llm_model_name
     if FLAGS.ckpt_step == -1:
-        dir_name = f"data/hallucination/{model_name}"
+        model_dir = model_name
     else:
-        dir_name = f"data/hallucination/{model_name}_step{FLAGS.ckpt_step}"
+        model_dir = f"{model_name}_step{FLAGS.ckpt_step}"
+    dir_name = os.path.join(dataset_dir, model_dir)
     os.makedirs(dir_name, exist_ok=True)
 
     layer_list = FLAGS.llm_layer
@@ -219,7 +247,7 @@ def main(_):
                 i,
                 len(FLAGS.gpu_id),
                 queue,
-                FLAGS.dataset_filename,
+                dataset_filename,
                 hf_model_name,
                 FLAGS.ckpt_step,
                 gpu_id,

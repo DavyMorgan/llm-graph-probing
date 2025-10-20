@@ -23,7 +23,7 @@ def prepare_data(dataset_filename, test_set_ratio, seed):
 
 
 class TruthfulQADataset(Dataset):
-    def __init__(self, llm_model_name, ckpt_step, llm_layer, network_density, indices, from_sparse_data=False, in_memory=True):
+    def __init__(self, llm_model_name, ckpt_step, llm_layer, network_density, indices, from_sparse_data=False, in_memory=True, dataset_name="truthfulqa"):
         self.llm_model_name = llm_model_name
         self.ckpt_step = ckpt_step
         self.llm_layer = llm_layer
@@ -35,11 +35,13 @@ class TruthfulQADataset(Dataset):
         self.network_indices = indices
         self.from_sparse_data = from_sparse_data
         self.in_memory = in_memory
+        self.dataset_name = dataset_name
 
         if self.ckpt_step == -1:
-            self.data_dir = f"data/hallucination/{self.llm_model_name}"
+            model_dir = self.llm_model_name
         else:
-            self.data_dir = f"data/hallucination/{self.llm_model_name}_step{self.ckpt_step}"
+            model_dir = f"{self.llm_model_name}_step{self.ckpt_step}"
+        self.data_dir = os.path.join("data/hallucination", self.dataset_name, model_dir)
 
         if self.in_memory:
             self.loaded_data = []
@@ -79,11 +81,13 @@ class TruthfulQADataset(Dataset):
             return self._load_data(idx)
 
 
-def get_truthfulqa_dataloader(dataset_filename, llm_model_name, ckpt_step, llm_layer, network_density, from_sparse_data, batch_size, eval_batch_size, num_workers, prefetch_factor, test_set_ratio, in_memory, seed):
+def get_truthfulqa_dataloader(dataset_name, dataset_split, llm_model_name, ckpt_step, llm_layer, network_density, from_sparse_data, batch_size, eval_batch_size, num_workers, prefetch_factor, test_set_ratio, in_memory, seed):
+
+    dataset_filename = f"data/hallucination/{dataset_name}-{dataset_split}.csv"
     train_data_split, test_data_split = prepare_data(dataset_filename, test_set_ratio, seed)
 
-    train_dataset = TruthfulQADataset(llm_model_name, ckpt_step, llm_layer, network_density, train_data_split, from_sparse_data, in_memory)
-    test_dataset = TruthfulQADataset(llm_model_name, ckpt_step, llm_layer, network_density, test_data_split, from_sparse_data, in_memory)
+    train_dataset = TruthfulQADataset(llm_model_name, ckpt_step, llm_layer, network_density, train_data_split, from_sparse_data, in_memory, dataset_name=dataset_name)
+    test_dataset = TruthfulQADataset(llm_model_name, ckpt_step, llm_layer, network_density, test_data_split, from_sparse_data, in_memory, dataset_name=dataset_name)
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, prefetch_factor=prefetch_factor)
     test_loader = DataLoader(test_dataset, batch_size=eval_batch_size, shuffle=False, num_workers=num_workers, prefetch_factor=prefetch_factor)
@@ -92,7 +96,7 @@ def get_truthfulqa_dataloader(dataset_filename, llm_model_name, ckpt_step, llm_l
 
 
 class TruthfulQALinearDataset(TorchDataset):
-    def __init__(self, llm_model_name, ckpt_step, llm_layer, feature_name, indices, feature_density=1.0):
+    def __init__(self, llm_model_name, ckpt_step, llm_layer, feature_name, indices, feature_density=1.0, dataset_name="truthfulqa"):
         self.llm_model_name = llm_model_name
         self.ckpt_step = ckpt_step
         self.llm_layer = llm_layer
@@ -105,11 +109,13 @@ class TruthfulQALinearDataset(TorchDataset):
             self.dense_filename = f"layer_{self.llm_layer}_{self.feature_name}.npy"
         self.network_indices = indices
         self.feature_density = feature_density
+        self.dataset_name = dataset_name
 
         if self.ckpt_step == -1:
-            self.data_dir = f"data/hallucination/{self.llm_model_name}"
+            model_dir = self.llm_model_name
         else:
-            self.data_dir = f"data/hallucination/{self.llm_model_name}_step{self.ckpt_step}"
+            model_dir = f"{self.llm_model_name}_step{self.ckpt_step}"
+        self.data_dir = os.path.join("data/hallucination", self.dataset_name, model_dir)
 
         self.loaded_data = []
         for idx in tqdm(range(len(self.network_indices))):
@@ -140,11 +146,13 @@ class TruthfulQALinearDataset(TorchDataset):
         return self.loaded_data[idx]
 
 
-def get_truthfulqa_linear_dataloader(feature_name, dataset_filename, llm_model_name, ckpt_step, llm_layer, batch_size, eval_batch_size, num_workers, prefetch_factor, test_set_ratio=0.2, shuffle=True, seed=42, feature_density=1.0):
+def get_truthfulqa_linear_dataloader(feature_name, dataset_name, dataset_split, llm_model_name, ckpt_step, llm_layer, batch_size, eval_batch_size, num_workers, prefetch_factor, test_set_ratio=0.2, shuffle=True, seed=42, feature_density=1.0):
+
+    dataset_filename = f"data/hallucination/{dataset_name}-{dataset_split}.csv"
     train_data_split, test_data_split = prepare_data(dataset_filename, test_set_ratio, seed)
 
-    train_dataset = TruthfulQALinearDataset(llm_model_name, ckpt_step, llm_layer, feature_name, train_data_split, feature_density)
-    test_dataset = TruthfulQALinearDataset(llm_model_name, ckpt_step, llm_layer, feature_name, test_data_split, feature_density)
+    train_dataset = TruthfulQALinearDataset(llm_model_name, ckpt_step, llm_layer, feature_name, train_data_split, feature_density, dataset_name=dataset_name)
+    test_dataset = TruthfulQALinearDataset(llm_model_name, ckpt_step, llm_layer, feature_name, test_data_split, feature_density, dataset_name=dataset_name)
 
     train_loader = TorchDataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, prefetch_factor=prefetch_factor)
     test_loader = TorchDataLoader(test_dataset, batch_size=eval_batch_size, shuffle=False, num_workers=num_workers, prefetch_factor=prefetch_factor)

@@ -8,7 +8,8 @@ from hallucination.utils import test_fn
 from utils.probing_model import GCNProbe as GCNClassifier, MLPProbe as MLPClassifier
 from utils.model_utils import get_num_nodes
 
-flags.DEFINE_string("dataset_filename", "data/hallucination/truthfulqa-validation.csv", "The dataset filename.")
+flags.DEFINE_enum("dataset_name", "truthfulqa", ["truthfulqa", "halubench"], "Name of the dataset.")
+flags.DEFINE_string("dataset_split", "validation", "The dataset split: validation or test.")
 flags.DEFINE_float("density", 1.0, "The density of the network/features.")
 flags.DEFINE_boolean("from_sparse_data", False, "Whether to use sparse data.")
 flags.DEFINE_string("llm_model_name", "qwen2.5-0.5b", "The name of the LLM model.")
@@ -52,13 +53,15 @@ def main(_):
         assert FLAGS.num_layers == 0, "Constant baseline requires num_layers=0."
 
     if FLAGS.ckpt_step == -1:
-        save_model_name = f"hallucination/{FLAGS.llm_model_name}"
+        model_dir = FLAGS.llm_model_name
     else:
-        save_model_name = f"hallucination/{FLAGS.llm_model_name}_step{FLAGS.ckpt_step}"
+        model_dir = f"{FLAGS.llm_model_name}_step{FLAGS.ckpt_step}"
+    save_model_name = f"hallucination/{FLAGS.dataset_name}/{model_dir}"
 
     if FLAGS.num_layers > 0:
         _, test_loader = get_truthfulqa_dataloader(
-            FLAGS.dataset_filename,
+            FLAGS.dataset_name,
+            FLAGS.dataset_split,
             FLAGS.llm_model_name,
             FLAGS.ckpt_step,
             FLAGS.llm_layer,
@@ -82,7 +85,8 @@ def main(_):
     else:
         _, test_loader = get_truthfulqa_linear_dataloader(
             FLAGS.probe_input,
-            FLAGS.dataset_filename,
+            FLAGS.dataset_name,
+            FLAGS.dataset_split,
             FLAGS.llm_model_name,
             FLAGS.ckpt_step,
             FLAGS.llm_layer,
