@@ -11,7 +11,7 @@ from hallucination.utils import test_fn
 from utils.probing_model import GCNProbe as GCNClassifier, MLPProbe as MLPClassifier
 from utils.model_utils import get_num_nodes
 
-flags.DEFINE_enum("dataset_name", "truthfulqa", ["truthfulqa", "halueval"], "Name of the dataset.")
+flags.DEFINE_enum("dataset_name", "truthfulqa", ["truthfulqa", "halueval", "medhallu"], "Name of the dataset.")
 flags.DEFINE_float("density", 1.0, "The density of the network/features.")
 flags.DEFINE_boolean("from_sparse_data", False, "Whether to use sparse data.")
 flags.DEFINE_string("llm_model_name", "qwen2.5-0.5b", "The name of the LLM model.")

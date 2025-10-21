@@ -16,7 +16,7 @@ from utils.model_utils import load_tokenizer_and_model
 flags.DEFINE_enum(
     "dataset_name",
     "truthfulqa",
-    ["truthfulqa", "halueval"],
+    ["truthfulqa", "halueval", "medhallu"],
     "The dataset to process."
 )
 flags.DEFINE_string("llm_model_name", "qwen2.5-0.5b", "The name of the LLM model.")

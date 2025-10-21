@@ -9,7 +9,7 @@ import pandas as pd
 flags.DEFINE_enum(
     "dataset_name",
     "truthfulqa",
-    ["truthfulqa", "halueval"],
+    ["truthfulqa", "halueval", "medhallu"],
     "Which dataset to construct."
 )
 flags.DEFINE_string("output_dir", "data/hallucination", "Directory to save the constructed dataset.")
@@ -44,11 +44,26 @@ def _build_halueval() -> List[Dict]:
     return records
 
 
+def _build_medhallu() -> List[Dict]:
+    dataset = load_dataset("UTAustin-AIHealth/MedHallu", "pqa_artificial", split="train")
+
+    records = []
+    for i, example in enumerate(tqdm(dataset, desc="MedHallu examples")):
+        knowledge = example["Knowledge"]
+        question = example["Question"]
+        records.append({"question_id": i, "question": f"{knowledge} {question}", "answer": example["Ground Truth"], "label": 1})
+        records.append({"question_id": i, "question": f"{knowledge} {question}", "answer": example["Hallucinated Answer"], "label": 0})
+
+    return records
+
+
 def main(_):
     if FLAGS.dataset_name == "truthfulqa":
         records = _build_truthfulqa()
     elif FLAGS.dataset_name == "halueval":
         records = _build_halueval()
+    elif FLAGS.dataset_name == "medhallu":
+        records = _build_medhallu()
     else:
         raise ValueError(f"Unsupported dataset: {FLAGS.dataset_name}")
 
