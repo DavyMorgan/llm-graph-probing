@@ -9,7 +9,6 @@ from utils.probing_model import GCNProbe as GCNClassifier, MLPProbe as MLPClassi
 from utils.model_utils import get_num_nodes
 
 flags.DEFINE_enum("dataset_name", "truthfulqa", ["truthfulqa", "halubench"], "Name of the dataset.")
-flags.DEFINE_string("dataset_split", "validation", "The dataset split: validation or test.")
 flags.DEFINE_float("density", 1.0, "The density of the network/features.")
 flags.DEFINE_boolean("from_sparse_data", False, "Whether to use sparse data.")
 flags.DEFINE_string("llm_model_name", "qwen2.5-0.5b", "The name of the LLM model.")
@@ -61,7 +60,6 @@ def main(_):
     if FLAGS.num_layers > 0:
         _, test_loader = get_truthfulqa_dataloader(
             FLAGS.dataset_name,
-            FLAGS.dataset_split,
             FLAGS.llm_model_name,
             FLAGS.ckpt_step,
             FLAGS.llm_layer,
@@ -86,7 +84,6 @@ def main(_):
         _, test_loader = get_truthfulqa_linear_dataloader(
             FLAGS.probe_input,
             FLAGS.dataset_name,
-            FLAGS.dataset_split,
             FLAGS.llm_model_name,
             FLAGS.ckpt_step,
             FLAGS.llm_layer,

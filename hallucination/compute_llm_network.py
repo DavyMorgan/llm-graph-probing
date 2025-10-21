@@ -16,18 +16,8 @@ from utils.model_utils import load_tokenizer_and_model
 flags.DEFINE_enum(
     "dataset_name",
     "truthfulqa",
-    ["truthfulqa", "halubench"],
+    ["truthfulqa", "halueval"],
     "The dataset to process."
-)
-flags.DEFINE_string(
-    "truthfulqa_split",
-    "validation",
-    "Split name used when deriving the TruthfulQA CSV path."
-)
-flags.DEFINE_string(
-    "halubench_split",
-    "test",
-    "Split name used when deriving the HaluBench CSV path."
 )
 flags.DEFINE_string("llm_model_name", "qwen2.5-0.5b", "The name of the LLM model.")
 flags.DEFINE_integer("ckpt_step", -1, "The checkpoint step.")
@@ -51,7 +41,7 @@ def get_word2vec_model():
     return _WORD2VEC_MODEL
 
 
-def compute_word2vec_stats(text, model):
+def compute_word2vec_embedding(text, model):
     # Tokenize text while keeping case and removing punctuation accents
     tokens = list(tokenize(text, lowercase=False, deacc=True))
     tokens_in_vocab = [token for token in tokens if token in model.key_to_index]
@@ -59,8 +49,7 @@ def compute_word2vec_stats(text, model):
         embedding = np.zeros(model.vector_size, dtype=np.float32)
     else:
         embedding = model.get_mean_vector(tokens_in_vocab).astype(np.float32)
-    token_count = float(len(tokens))
-    return embedding, token_count
+    return embedding
 
 
 def format_prompt(questions, answers, model_name, tokenizer):
@@ -100,32 +89,32 @@ def run_llm(
     tokenizer, model = load_tokenizer_and_model(model_name, ckpt_step, gpu_id)
 
     df = pd.read_csv(dataset_filename)
-    original_input_questions = df["question"].tolist()
-    original_input_answers = df["answer"].tolist()
-    original_labels = df["label"].tolist()
-    num_questions = len(original_input_questions)
+    num_questions = len(df)
+    original_input_questions = df["question"].tolist()[rank::num_producers]
+    original_input_answers = df["answer"].tolist()[rank::num_producers]
+    original_labels = df["label"].tolist()[rank::num_producers]
         
     if not resume:
-        input_texts = format_prompt(original_input_questions[rank::num_producers], original_input_answers[rank::num_producers], model_name, tokenizer)
-        labels = original_labels[rank::num_producers]
+        input_texts = format_prompt(original_input_questions, original_input_answers, model_name, tokenizer)
+        labels = original_labels
         question_indices = list(range(rank, num_questions, num_producers))
     else:
         input_texts = []
         labels = []
         question_indices = []
-        for question_idx in range(rank, num_questions, num_producers):
+        for i, question_idx in enumerate(range(rank, num_questions, num_producers)):
             if not os.path.exists(f"{p_save_path}/{question_idx}"):
-                input_texts.extend(format_prompt([original_input_questions[question_idx]], [original_input_answers[question_idx]], model_name, tokenizer))
-                labels.append(original_labels[question_idx])
+                input_texts.extend(format_prompt([original_input_questions[i]], [original_input_answers[i]], model_name, tokenizer))
+                labels.append(original_labels[i])
                 question_indices.append(question_idx)
 
     if len(input_texts) > 0:
         tokenizer.pad_token = tokenizer.eos_token
         word2vec_model = get_word2vec_model()
-        word2vec_stats = [compute_word2vec_stats(text, word2vec_model) for text in input_texts]
-        sample_word2vec_embeddings = np.stack([embedding for embedding, _ in word2vec_stats], axis=0)
-        sample_word_token_counts = np.array([[count] for _, count in word2vec_stats], dtype=np.float32)
-        
+        sample_word2vec_embeddings = np.stack([compute_word2vec_embedding(text, word2vec_model) for text in input_texts], axis=0)
+        answer_tokens = [list(tokenizer.tokenize(answer)) for answer in original_input_answers]
+        sample_word_token_counts = [len(tokens) for tokens in answer_tokens]
+
         with torch.no_grad():
             for i in tqdm(range(0, len(input_texts), batch_size), position=rank, desc=f"Producer {rank}"):
                 inputs = tokenizer(input_texts[i:i+batch_size], padding=True, truncation=False, return_tensors="pt")
@@ -214,16 +203,8 @@ def run_corr(queue, layer_list, p_save_path, worker_idx, sparse=False, network_d
 
 
 def main(_):
-    if FLAGS.dataset_name == "truthfulqa":
-        dataset_key = "truthfulqa"
-        dataset_filename = os.path.join("data/hallucination", f"truthfulqa-{FLAGS.truthfulqa_split}.csv")
-    elif FLAGS.dataset_name == "halubench":
-        dataset_key = "halubench"
-        dataset_filename = os.path.join("data/hallucination", f"halubench-{FLAGS.halubench_split}.csv")
-    else:
-        raise ValueError(f"Unsupported dataset_name: {FLAGS.dataset_name}")
-
-    dataset_dir = os.path.join("data/hallucination", dataset_key)
+    dataset_filename = os.path.join("data/hallucination", f"{FLAGS.dataset_name}.csv")
+    dataset_dir = os.path.join("data/hallucination", FLAGS.dataset_name)
     os.makedirs(dataset_dir, exist_ok=True)
 
     model_name = FLAGS.llm_model_name

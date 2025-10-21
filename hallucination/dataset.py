@@ -81,9 +81,9 @@ class TruthfulQADataset(Dataset):
             return self._load_data(idx)
 
 
-def get_truthfulqa_dataloader(dataset_name, dataset_split, llm_model_name, ckpt_step, llm_layer, network_density, from_sparse_data, batch_size, eval_batch_size, num_workers, prefetch_factor, test_set_ratio, in_memory, seed):
+def get_truthfulqa_dataloader(dataset_name, llm_model_name, ckpt_step, llm_layer, network_density, from_sparse_data, batch_size, eval_batch_size, num_workers, prefetch_factor, test_set_ratio, in_memory, seed):
 
-    dataset_filename = f"data/hallucination/{dataset_name}-{dataset_split}.csv"
+    dataset_filename = f"data/hallucination/{dataset_name}.csv"
     train_data_split, test_data_split = prepare_data(dataset_filename, test_set_ratio, seed)
 
     train_dataset = TruthfulQADataset(llm_model_name, ckpt_step, llm_layer, network_density, train_data_split, from_sparse_data, in_memory, dataset_name=dataset_name)
@@ -146,9 +146,9 @@ class TruthfulQALinearDataset(TorchDataset):
         return self.loaded_data[idx]
 
 
-def get_truthfulqa_linear_dataloader(feature_name, dataset_name, dataset_split, llm_model_name, ckpt_step, llm_layer, batch_size, eval_batch_size, num_workers, prefetch_factor, test_set_ratio=0.2, shuffle=True, seed=42, feature_density=1.0):
+def get_truthfulqa_linear_dataloader(feature_name, dataset_name, llm_model_name, ckpt_step, llm_layer, batch_size, eval_batch_size, num_workers, prefetch_factor, test_set_ratio=0.2, shuffle=True, seed=42, feature_density=1.0):
 
-    dataset_filename = f"data/hallucination/{dataset_name}-{dataset_split}.csv"
+    dataset_filename = f"data/hallucination/{dataset_name}.csv"
     train_data_split, test_data_split = prepare_data(dataset_filename, test_set_ratio, seed)
 
     train_dataset = TruthfulQALinearDataset(llm_model_name, ckpt_step, llm_layer, feature_name, train_data_split, feature_density, dataset_name=dataset_name)
