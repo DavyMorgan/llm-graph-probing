@@ -1,6 +1,8 @@
 from absl import app, flags
 import os
 from typing import List, Dict
+import urllib.error
+import urllib.request
 
 from tqdm import tqdm
 from datasets import load_dataset
@@ -9,7 +11,7 @@ import pandas as pd
 flags.DEFINE_enum(
     "dataset_name",
     "truthfulqa",
-    ["truthfulqa", "halueval", "medhallu"],
+    ["truthfulqa", "halueval", "medhallu", "helm"],
     "Which dataset to construct."
 )
 flags.DEFINE_string("output_dir", "data/hallucination", "Directory to save the constructed dataset.")
@@ -57,6 +59,55 @@ def _build_medhallu() -> List[Dict]:
     return records
 
 
+def _build_helm() -> List[Dict]:
+    import json
+    
+    raw_urls = [
+        "https://raw.githubusercontent.com/oneal2000/MIND/refs/heads/main/helm/data/falcon40b/data.json",
+        "https://raw.githubusercontent.com/oneal2000/MIND/refs/heads/main/helm/data/gptj7b/data.json",
+        "https://raw.githubusercontent.com/oneal2000/MIND/refs/heads/main/helm/data/llamabase7b/data.json",
+        "https://raw.githubusercontent.com/oneal2000/MIND/refs/heads/main/helm/data/llamachat13b/data.json",
+        "https://raw.githubusercontent.com/oneal2000/MIND/refs/heads/main/helm/data/llamachat7b/data.json",
+        "https://raw.githubusercontent.com/oneal2000/MIND/refs/heads/main/helm/data/mpt7b/data.json",
+        "https://raw.githubusercontent.com/oneal2000/MIND/refs/heads/main/helm/data/opt7b/data.json"
+    ]
+    save_paths = []
+    for url in raw_urls:
+        model_name = url.split("/")[-2]
+        save_path = os.path.join(FLAGS.output_dir, f"helm_{model_name}.json")
+        save_paths.append(save_path)
+        try:
+            urllib.request.urlretrieve(url, save_path)
+            print(f"Downloaded HELM {model_name} dataset to {save_path}")
+        except urllib.error.URLError as e:
+            print(f"Error downloading file: {e}")
+        except IOError as e:
+            print(f"Error writing file to path {save_path}: {e}")
+        except Exception as e:
+            raise RuntimeError(f"Failed to download HELM dataset from {url}: {e}")
+
+    records = []
+    for save_path in save_paths:
+        with open(save_path, 'r') as f:
+            data = json.load(f)
+
+        for question_id, (_, entry) in enumerate(tqdm(data.items(), desc="HELM examples")):
+            prompt = entry["prompt"]
+            for sentence_data in entry["sentences"]:
+                sentence = sentence_data["sentence"]
+                label = sentence_data["label"]
+                if "\nlabel" in sentence or "\nlable" in sentence or "\nLabel" in sentence or "\nLable" in sentence or "\nlebel" in sentence or "\nLebel" in sentence:
+                    continue
+                records.append({
+                    "question_id": question_id,
+                    "question": prompt,
+                    "answer": sentence,
+                    "label": label
+                })
+    
+    return records
+
+
 def main(_):
     if FLAGS.dataset_name == "truthfulqa":
         records = _build_truthfulqa()
@@ -64,10 +115,13 @@ def main(_):
         records = _build_halueval()
     elif FLAGS.dataset_name == "medhallu":
         records = _build_medhallu()
+    elif FLAGS.dataset_name == "helm":
+        records = _build_helm()
     else:
         raise ValueError(f"Unsupported dataset: {FLAGS.dataset_name}")
 
     df = pd.DataFrame(records)
+    df = df.drop_duplicates().reset_index(drop=True)
     output_path = os.path.join(FLAGS.output_dir, f"{FLAGS.dataset_name}.csv")
     os.makedirs(FLAGS.output_dir, exist_ok=True)
     df.to_csv(output_path, index=False)
