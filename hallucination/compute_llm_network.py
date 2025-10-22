@@ -112,7 +112,7 @@ def run_llm(
         tokenizer.pad_token = tokenizer.eos_token
         word2vec_model = get_word2vec_model()
         sample_word2vec_embeddings = np.stack([compute_word2vec_embedding(text, word2vec_model) for text in input_texts], axis=0)
-        answer_tokens = [list(tokenizer.tokenize(answer)) for answer in original_input_answers]
+        answer_tokens = [list(tokenize(str(answer))) for answer in original_input_answers]
         sample_word_token_counts = [[len(tokens)] for tokens in answer_tokens]
 
         with torch.no_grad():
