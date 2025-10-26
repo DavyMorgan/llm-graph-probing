@@ -91,7 +91,7 @@ def run_save(queue, p_save_path, worker_idx):
         os.makedirs(p_dir_name, exist_ok=True)
 
         # Save perplexity
-        np.save(f"{p_dir_name}/perplexity.npy", perplexity)
+        np.save(f"{p_dir_name}/perplexity.npy", np.array([perplexity]))
 
     print(f"Worker {worker_idx} finished processing.")
 
