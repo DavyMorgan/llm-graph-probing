@@ -10,7 +10,8 @@ import torch
 import gensim.downloader as gensim_downloader
 from gensim.utils import tokenize
 
-from utils.constants import hf_model_name_map, BASE_MODELS, QWEN_CHAT_MODELS
+from hallucination.utils import format_prompt
+from utils.constants import hf_model_name_map
 from utils.model_utils import load_tokenizer_and_model
 
 flags.DEFINE_enum(
@@ -50,26 +51,6 @@ def compute_word2vec_embedding(text, model):
     else:
         embedding = model.get_mean_vector(tokens_in_vocab).astype(np.float32)
     return embedding
-
-
-def format_prompt(questions, answers, model_name, tokenizer):
-    prompts = []
-    for question, answer in zip(questions, answers):
-        if model_name in QWEN_CHAT_MODELS:
-            messages = [
-                {"role": "user", "content": question},
-                {"role": "assistant", "content": str(answer)}
-            ]
-            prompt = tokenizer.apply_chat_template(
-                messages, add_generation_prompt=False, 
-                return_tensors=None, return_dict=False, 
-                tokenize=False, continue_final_message=False, enable_thinking=False)
-        elif model_name in BASE_MODELS:
-            prompt = f"Question: {question} Answer: {str(answer)}"
-        else:
-            raise NotImplementedError(f"Model {model_name} is not supported.")
-        prompts.append(prompt)
-    return prompts
 
 
 def run_llm(
