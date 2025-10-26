@@ -5,7 +5,7 @@ from utils.constants import hf_model_name_map, QWEN_MODELS, QWEN_CHAT_MODELS, OP
 def get_num_nodes(llm_model_name, llm_layer, linear_probe_input=None):
     if linear_probe_input == "word2vec_average":
         return 300
-    if linear_probe_input == "word2vec_token_count":
+    if linear_probe_input in {"word2vec_token_count", "perplexity"}:
         return 1
 
     hf_model_name = hf_model_name_map[llm_model_name]
