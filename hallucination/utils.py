@@ -78,3 +78,33 @@ def test_fn(model, data_loader, device, num_layers):
     cm = confusion_matrix(all_labels, all_preds)
     
     return acc, precision, recall, f1, cm
+
+def test_fn_ccs(model, data_loader, device):
+    model.eval()
+    all_preds = []
+    all_labels = []
+    with torch.no_grad():
+        for data in data_loader:
+            x_yes, x_no, y = data
+            x_yes, x_no, y = x_yes.to(device), x_no.to(device), y.to(device)
+            out_yes = model.forward(x_yes)
+            out_no = model.forward(x_no)
+            pred = 0.5 * (out_yes + (1 - out_no))
+            all_preds.append((pred.cpu().flatten() >= 0.5).long())
+            all_labels.append(y.cpu())
+
+    all_preds = torch.cat(all_preds).numpy()
+    all_labels = torch.cat(all_labels).numpy()
+    
+    acc = accuracy_score(all_labels, all_preds)
+    precision, recall, f1, _ = precision_recall_fscore_support(all_labels, all_preds, average='binary', zero_division=0)
+    cm = confusion_matrix(all_labels, all_preds)
+
+    acc_rev = accuracy_score(1 - all_labels, all_preds)
+    precision_rev, recall_rev, f1_rev, _ = precision_recall_fscore_support(1 - all_labels, all_preds, average='binary', zero_division=0)
+    cm_rev = confusion_matrix(1 - all_labels, all_preds)
+
+    if acc_rev > acc:
+        return acc_rev, precision_rev, recall_rev, f1_rev, cm_rev
+    
+    return acc, precision, recall, f1, cm
