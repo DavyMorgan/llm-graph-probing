@@ -24,6 +24,27 @@ def format_prompt(questions, answers, model_name, tokenizer):
     return prompts
 
 
+def format_prompt_ccs(questions, answers, model_name, tokenizer, suffix):
+    prompts = []
+    for question, answer in zip(questions, answers):
+        if model_name in QWEN_CHAT_MODELS:
+            messages = [
+                {"role": "user", "content": question},
+                {"role": "assistant", "content": str(answer)},
+                {"role": "user", "content": f"Is the answer above correct?"},
+                {"role": "assistant", "content": suffix}
+            ]
+            prompt = tokenizer.apply_chat_template(
+                messages, add_generation_prompt=False,
+                return_tensors=None, return_dict=False,
+                tokenize=False, continue_final_message=False, enable_thinking=False)
+        elif model_name in BASE_MODELS:
+            prompt = f"Question: {question} Answer: {str(answer)} Is the answer above correct? {suffix}."
+        else:
+            raise NotImplementedError(f"Model {model_name} is not supported.")
+        prompts.append(prompt)
+    return prompts
+
 
 def test_fn(model, data_loader, device, num_layers):
     model.eval()
