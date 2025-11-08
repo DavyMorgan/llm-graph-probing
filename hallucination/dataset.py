@@ -145,14 +145,29 @@ class TruthfulQALinearDataset(TorchDataset):
     def __getitem__(self, idx):
         return self.loaded_data[idx]
 
+    def get_all_data(self):
+        all_features = []
+        all_labels = []
+        for data in self.loaded_data:
+            x, y = data
+            all_features.append(x)
+            all_labels.append(y)
+        all_features = torch.stack(all_features, dim=0)
+        all_labels = torch.stack(all_labels, dim=0)
+        return all_features, all_labels
 
-def get_truthfulqa_linear_dataloader(feature_name, dataset_name, llm_model_name, ckpt_step, llm_layer, batch_size, eval_batch_size, num_workers, prefetch_factor, test_set_ratio=0.2, shuffle=True, seed=42, feature_density=1.0):
+
+def get_truthfulqa_linear_dataloader(feature_name, dataset_name, llm_model_name, ckpt_step, llm_layer, batch_size, eval_batch_size, num_workers, prefetch_factor, test_set_ratio=0.2, shuffle=True, seed=42, feature_density=1.0, return_all_data=False):
 
     dataset_filename = f"data/hallucination/{dataset_name}.csv"
     train_data_split, test_data_split = prepare_data(dataset_filename, test_set_ratio, seed)
 
     train_dataset = TruthfulQALinearDataset(llm_model_name, ckpt_step, llm_layer, feature_name, train_data_split, feature_density, dataset_name=dataset_name)
     test_dataset = TruthfulQALinearDataset(llm_model_name, ckpt_step, llm_layer, feature_name, test_data_split, feature_density, dataset_name=dataset_name)
+    if return_all_data:
+        train_features, train_labels = train_dataset.get_all_data()
+        test_features, test_labels = test_dataset.get_all_data()
+        return (train_features, train_labels), (test_features, test_labels)
 
     train_loader = TorchDataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, prefetch_factor=prefetch_factor)
     test_loader = TorchDataLoader(test_dataset, batch_size=eval_batch_size, shuffle=False, num_workers=num_workers, prefetch_factor=prefetch_factor)
