@@ -11,10 +11,13 @@ from torch_geometric.loader import DataLoader
 from torch_geometric.utils import dense_to_sparse
 
 
-def prepare_data(dataset_filename, ckpt_step, llm_model_name, dataset_path, test_set_ratio, seed, target="perplexities", dataset_name="openwebtext"):
+def prepare_data(dataset_filename, ckpt_step, llm_model_name, dataset_path, test_set_ratio, seed, target=["perplexities"], dataset_name="openwebtext", normalize_targets=True):
     data = pd.read_csv(dataset_filename)
+    if isinstance(target, str):
+        target = [target]
     targets = data[target].to_numpy(dtype=np.float32)
-    targets = (targets - targets.min()) / (targets.max() - targets.min())
+    if normalize_targets:
+        targets = (targets - targets.min(axis=0)) / (targets.max(axis=0) - targets.min(axis=0))
     num_sentences = len(targets)
 
     if ckpt_step == -1:
@@ -51,7 +54,7 @@ def wrap_data(path, network_id, llm_layer, target_value, network_density, from_s
         x=torch.arange(num_nodes),
         edge_index=edge_index_llm,
         edge_attr=edge_attr_llm,
-        y=torch.tensor([target_value], dtype=torch.float32)
+        y=torch.tensor(target_value, dtype=torch.float32)
     )
     return data
 
@@ -91,8 +94,9 @@ def get_brain_network_dataloader(
     in_memory=True,
     shuffle=True,
     seed=42,
-    target="perplexities",
+    target=["perplexities"],
     dataset_name="openwebtext",
+    normalize_targets=True,
     **kwargs
 ):
 
@@ -105,6 +109,7 @@ def get_brain_network_dataloader(
         seed,
         target,
         dataset_name,
+        normalize_targets,
     )
 
     if in_memory:
@@ -180,7 +185,7 @@ class BrainNetworkLinearDataset(TorchDataset):
         if self.feature_density < 1.0:
             threshold = torch.quantile(torch.abs(feature), 1 - self.feature_density)
             feature[torch.abs(feature) < threshold] = 0
-        target = torch.tensor([self.targets[idx]], dtype=torch.float32)
+        target = torch.tensor(self.targets[idx], dtype=torch.float32)
         return feature, target
 
     def __getitem__(self, idx):
@@ -202,8 +207,9 @@ def get_brain_network_linear_dataloader(
     test_set_ratio=0.2,
     shuffle=True,
     seed=42,
-    target="perplexities",
+    target=["perplexities"],
     dataset_name="openwebtext",
+    normalize_targets=True,
     **kwargs
 ):
     train_data_split, test_data_split, targets, path = prepare_data(
@@ -215,6 +221,7 @@ def get_brain_network_linear_dataloader(
         seed,
         target,
         dataset_name,
+        normalize_targets,
     )
 
     train_dataset = BrainNetworkLinearDataset(

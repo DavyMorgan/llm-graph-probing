@@ -8,14 +8,13 @@ torch.set_default_dtype(torch.float32)
 from torch.utils.tensorboard import SummaryWriter
 
 from graph_probing.dataset import get_brain_network_dataloader, get_brain_network_linear_dataloader
-from graph_probing.utils import test_fn
+from graph_probing.utils import test_fn, test_fn_space
 
 from utils.constants import hf_model_name_map
 from utils.model_utils import get_num_nodes
 from utils.probing_model import GCNProbe as GCNRegressor, MLPProbe as MLPRegressor
 
 flags.DEFINE_string("dataset", "openwebtext", "The name of the dataset.")
-flags.DEFINE_string("target", "perplexities", "The target column for regression.")
 flags.DEFINE_string("probe_input", "activation", "The input type for probing: activation, activation_avg, or corr.")
 flags.DEFINE_float("density", 1.0, "The density of the input.")
 flags.DEFINE_boolean("from_sparse_data", False, "Whether to use sparse data.")
@@ -56,12 +55,20 @@ def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler
         "pearsonr": float("-inf"),
         "spearmanr": float("-inf"),
     }
-    mse, mae, r2, pearsonr, spearmanr, _, _ = test_fn(model, test_data_loader, device, num_layers=FLAGS.num_layers)
-    torch.cuda.empty_cache()
-    for metric, value in zip(["mse", "mae", "r2", "pearsonr", "spearmanr"], [mse, mae, r2, pearsonr, spearmanr]):
-        logging.info(f"Initial Test {metric.capitalize()}: {value:.4f}")
-        writer.add_scalar(f"test/{metric}", value, 0)
-        best_metrics[metric] = value
+    if FLAGS.dataset == "world_place":
+        mse, mae, haversine, _, _ = test_fn_space(model, test_data_loader, device, num_layers=FLAGS.num_layers)
+        torch.cuda.empty_cache()
+        for metric, value in zip(["mse", "mae", "haversine"], [mse, mae, haversine]):
+            logging.info(f"Initial Test {metric.capitalize()}: {value:.4f}")
+            writer.add_scalar(f"test/{metric}", value, 0)
+            best_metrics[metric] = value
+    else:
+        mse, mae, r2, pearsonr, spearmanr, _, _ = test_fn(model, test_data_loader, device, num_layers=FLAGS.num_layers)
+        torch.cuda.empty_cache()
+        for metric, value in zip(["mse", "mae", "r2", "pearsonr", "spearmanr"], [mse, mae, r2, pearsonr, spearmanr]):
+            logging.info(f"Initial Test {metric.capitalize()}: {value:.4f}")
+            writer.add_scalar(f"test/{metric}", value, 0)
+            best_metrics[metric] = value
     best_metrics["epoch"] = 0
     epochs_no_improve = 0
 
@@ -100,23 +107,42 @@ def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler
         writer.add_scalar("train/loss", avg_loss, epoch + 1)
         torch.cuda.empty_cache()
 
-        mse, mae, r2, pearsonr, spearmanr, _, _ = test_fn(model, test_data_loader, device, num_layers=FLAGS.num_layers)
-        torch.cuda.empty_cache()
-        for metric, value in zip(["mse", "mae", "r2", "pearsonr", "spearmanr"], [mse, mae, r2, pearsonr, spearmanr]):
-            logging.info(f"Test {metric.capitalize()}: {value:.4f}")
-            writer.add_scalar(f"test/{metric}", value, epoch + 1)
-        scheduler.step(mse)
+        if FLAGS.dataset == "world_place":
+            mse, mae, haversine, _, _ = test_fn_space(model, test_data_loader, device, num_layers=FLAGS.num_layers)
+            torch.cuda.empty_cache()
+            for metric, value in zip(["mse", "mae", "haversine"], [mse, mae, haversine]):
+                logging.info(f"Test {metric.capitalize()}: {value:.4f}")
+                writer.add_scalar(f"test/{metric}", value, epoch + 1)
+            scheduler.step(mse)
 
-        if mse < best_metrics["mse"]:
-            for metric, value in zip(["mse", "mae", "r2", "pearsonr", "spearmanr"], [mse, mae, r2, pearsonr, spearmanr]):
-                best_metrics[metric] = value
-            best_metrics["epoch"] = epoch + 1
-            torch.save(model.state_dict(), model_save_path)
-            epochs_no_improve = 0
+            if mse < best_metrics["mse"]:
+                for metric, value in zip(["mse", "mae", "haversine"], [mse, mae, haversine]):
+                    best_metrics[metric] = value
+                best_metrics["epoch"] = epoch + 1
+                torch.save(model.state_dict(), model_save_path)
+                epochs_no_improve = 0
+            else:
+                epochs_no_improve += 1
+                if epochs_no_improve >= FLAGS.early_stop_patience:
+                    break
         else:
-            epochs_no_improve += 1
-            if epochs_no_improve >= FLAGS.early_stop_patience:
-                break
+            mse, mae, r2, pearsonr, spearmanr, _, _ = test_fn(model, test_data_loader, device, num_layers=FLAGS.num_layers)
+            torch.cuda.empty_cache()
+            for metric, value in zip(["mse", "mae", "r2", "pearsonr", "spearmanr"], [mse, mae, r2, pearsonr, spearmanr]):
+                logging.info(f"Test {metric.capitalize()}: {value:.4f}")
+                writer.add_scalar(f"test/{metric}", value, epoch + 1)
+            scheduler.step(mse)
+
+            if mse < best_metrics["mse"]:
+                for metric, value in zip(["mse", "mae", "r2", "pearsonr", "spearmanr"], [mse, mae, r2, pearsonr, spearmanr]):
+                    best_metrics[metric] = value
+                best_metrics["epoch"] = epoch + 1
+                torch.save(model.state_dict(), model_save_path)
+                epochs_no_improve = 0
+            else:
+                epochs_no_improve += 1
+                if epochs_no_improve >= FLAGS.early_stop_patience:
+                    break
 
     for key, value in best_metrics.items():
         logging.info(f"Best Test {key.capitalize()}: {value:.4f}")
@@ -137,14 +163,25 @@ def main(_):
 
     hf_model_name = hf_model_name_map[FLAGS.llm_model_name]
     if FLAGS.dataset == "art":
-        assert FLAGS.target == "decade"
         dataset_filename = "st_data/art.csv"
+        target = "decade"
+        num_output = 1
+        normalize_targets = True
+    elif FLAGS.dataset == "world_place":
+        dataset_filename = "st_data/world_place.csv"
+        target = ["lat", "lon"]
+        num_output = 2
+        normalize_targets = False
     else:
         revision = "main" if FLAGS.ckpt_step == -1 else f"step{FLAGS.ckpt_step}"
         if hf_model_name.startswith("EleutherAI") and revision != "main":
             dataset_filename = f"data/graph_probing/{FLAGS.dataset}-10k-{FLAGS.llm_model_name}-{revision}.csv"
         else:
             dataset_filename = f"data/graph_probing/{FLAGS.dataset}-10k-{FLAGS.llm_model_name}.csv"
+        target = "perplexities"
+        num_output = 1
+        normalize_targets = True
+
 
     if FLAGS.num_layers > 0:
         train_data_loader, test_data_loader = get_brain_network_dataloader(
@@ -161,8 +198,9 @@ def main(_):
             test_set_ratio=FLAGS.test_set_ratio,
             in_memory=FLAGS.in_memory,
             seed=FLAGS.seed,
-            target=FLAGS.target,
-            dataset_name=FLAGS.dataset
+            target=target,
+            dataset_name=FLAGS.dataset,
+            normalize_targets=normalize_targets,
         )
         model = GCNRegressor(
             num_nodes=get_num_nodes(FLAGS.llm_model_name, FLAGS.llm_layer),
@@ -170,7 +208,7 @@ def main(_):
             num_layers=FLAGS.num_layers,
             nonlinear_activation=FLAGS.nonlinear_activation,
             dropout=FLAGS.dropout,
-            num_output=1,
+            num_output=num_output,
         ).to(device)
     else:
         train_data_loader, test_data_loader = get_brain_network_linear_dataloader(
@@ -186,14 +224,15 @@ def main(_):
             prefetch_factor=FLAGS.prefetch_factor,
             test_set_ratio=FLAGS.test_set_ratio,
             seed=FLAGS.seed,
-            target=FLAGS.target,
-            dataset_name=FLAGS.dataset
+            target=target,
+            dataset_name=FLAGS.dataset,
+            normalize_targets=normalize_targets,
         )
         model = MLPRegressor(
             num_nodes=get_num_nodes(FLAGS.llm_model_name, FLAGS.llm_layer, FLAGS.probe_input),
             hidden_channels=FLAGS.num_channels,
             num_layers=-FLAGS.num_layers,
-            num_output=1,
+            num_output=num_output,
         ).to(device)
 
 

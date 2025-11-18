@@ -7,14 +7,13 @@ import torch
 torch.set_default_dtype(torch.float32)
 
 from graph_probing.dataset import get_brain_network_dataloader, get_brain_network_linear_dataloader
-from graph_probing.utils import eval_model
+from graph_probing.utils import eval_model, eval_model_space
 
 from utils.constants import hf_model_name_map
 from utils.model_utils import get_num_nodes
 from utils.probing_model import GCNProbe as GCNRegressor, MLPProbe as MLPRegressor
 
 flags.DEFINE_string("dataset", "openwebtext", "The name of the dataset.")
-flags.DEFINE_string("target", "perplexities", "The target column for regression.")
 flags.DEFINE_string("probe_input", "activation", "The input type for linear probing: activation, activation_avg or corr.")
 flags.DEFINE_float("density", 1.0, "The density of the input.")
 flags.DEFINE_boolean("from_sparse_data", False, "Whether to use sparse data.")
@@ -45,14 +44,24 @@ def main(_):
 
     hf_model_name = hf_model_name_map[FLAGS.llm_model_name]
     if FLAGS.dataset == "art":
-        assert FLAGS.target == "decade"
         dataset_filename = "st_data/art.csv"
+        target = "decade"
+        num_output = 1
+        normalize_targets = True
+    elif FLAGS.dataset == "world_place":
+        dataset_filename = "st_data/world_place.csv"
+        target = ["lat", "lon"]
+        num_output = 2
+        normalize_targets = False
     else:
         revision = "main" if FLAGS.ckpt_step == -1 else f"step{FLAGS.ckpt_step}"
         if hf_model_name.startswith("EleutherAI") and revision != "main":
             dataset_filename = f"data/graph_probing/{FLAGS.dataset}-10k-{FLAGS.llm_model_name}-{revision}.csv"
         else:
             dataset_filename = f"data/graph_probing/{FLAGS.dataset}-10k-{FLAGS.llm_model_name}.csv"
+        target = "perplexities"
+        num_output = 1
+        normalize_targets = True
 
     if FLAGS.num_layers > 0:
         _, test_data_loader = get_brain_network_dataloader(
@@ -69,8 +78,9 @@ def main(_):
             test_set_ratio=FLAGS.test_set_ratio,
             in_memory=FLAGS.in_memory,
             seed=FLAGS.seed,
-            target=FLAGS.target,
+            target=target,
             dataset_name=FLAGS.dataset,
+            normalize_targets=normalize_targets,
         )
 
         model = GCNRegressor(
@@ -79,7 +89,7 @@ def main(_):
             num_layers=FLAGS.num_layers,
             nonlinear_activation=FLAGS.nonlinear_activation,
             dropout=FLAGS.dropout,
-            num_output=1,
+            num_output=num_output,
         ).to(device)
     else:
         _, test_data_loader = get_brain_network_linear_dataloader(
@@ -95,14 +105,15 @@ def main(_):
             prefetch_factor=FLAGS.prefetch_factor,
             test_set_ratio=FLAGS.test_set_ratio,
             seed=FLAGS.seed,
-            target=FLAGS.target,
-            dataset_name=FLAGS.dataset
+            target=target,
+            dataset_name=FLAGS.dataset,
+            normalize_targets=normalize_targets,
         )
         model = MLPRegressor(
             num_nodes=get_num_nodes(FLAGS.llm_model_name, FLAGS.llm_layer, FLAGS.probe_input),
             hidden_channels=FLAGS.num_channels,
             num_layers=-FLAGS.num_layers,
-            num_output=1,
+            num_output=num_output,
         ).to(device)
 
     if FLAGS.ckpt_step == -1:
@@ -115,8 +126,11 @@ def main(_):
     )
     model.load_state_dict(torch.load(model_save_path, map_location=device, weights_only=True))
 
-    all_y, all_pred = eval_model(model, test_data_loader, device, num_layers=FLAGS.num_layers)
-    results = np.vstack((all_y, all_pred))
+    if FLAGS.dataset == "world_place":
+        all_y, all_pred = eval_model_space(model, test_data_loader, device, num_layers=FLAGS.num_layers)
+    else:
+        all_y, all_pred = eval_model(model, test_data_loader, device, num_layers=FLAGS.num_layers)
+    results = np.vstack((all_y.T, all_pred.T)) if FLAGS.dataset == "world_place" else np.vstack((all_y, all_pred))
     np.save(f"saves/graph_probing/{save_model_name}/layer_{FLAGS.llm_layer}/results_density-{FLAGS.density}_dim-{FLAGS.num_channels}_hop-{FLAGS.num_layers}_input-{FLAGS.probe_input}.npy", results)
 
 
