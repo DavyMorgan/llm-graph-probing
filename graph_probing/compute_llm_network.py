@@ -35,11 +35,20 @@ def run_llm(
     layer_list,
     resume,
     p_save_path,
+    dataset_name,
 ):
     tokenizer, model = load_tokenizer_and_model(model_name, ckpt_step, gpu_id)
 
     data = pd.read_csv(dataset_filename)
-    original_input_texts = data["sentences"].to_list()
+    
+    if dataset_name == "art":
+        original_input_texts = []
+        for _, row in data.iterrows():
+            prompt = f"When was the release date of {row['creator']}'s {row['title']}?"
+            original_input_texts.append(prompt)
+    else:
+        original_input_texts = data["sentences"].to_list()
+        
     num_sentences = len(original_input_texts)
     if not resume:
         input_texts = original_input_texts[rank::num_producers]
@@ -110,21 +119,27 @@ def run_corr(queue, layer_list, p_save_path, worker_idx, network_density=1.0):
 
 def main(_):
     model_name = FLAGS.llm_model_name
+    hf_model_name = hf_model_name_map[model_name]
     if FLAGS.ckpt_step == -1:
-        dir_name = f"data/graph_probing/{model_name}"
+        dir_name = f"data/graph_probing/{model_name}/{FLAGS.dataset}"
     else:
-        dir_name = f"data/graph_probing/{model_name}_step{FLAGS.ckpt_step}"
+        dir_name = f"data/graph_probing/{model_name}_step{FLAGS.ckpt_step}/{FLAGS.dataset}"
+    
+    if FLAGS.dataset == "art":
+        dataset_filename = "st_data/art.csv"
+    else:
+        revision = "main" if FLAGS.ckpt_step == -1 else f"step{FLAGS.ckpt_step}"
+        if hf_model_name.startswith("EleutherAI") and revision != "main":
+            dataset_filename = f"data/graph_probing/{FLAGS.dataset}-10k-{FLAGS.llm_model_name}-{revision}.csv"
+        else:
+            dataset_filename = f"data/graph_probing/{FLAGS.dataset}-10k-{FLAGS.llm_model_name}.csv"
+
     os.makedirs(dir_name, exist_ok=True)
 
     layer_list = FLAGS.llm_layer
     queue = Queue()
     producers = []
-    hf_model_name = hf_model_name_map[model_name]
-    revision = "main" if FLAGS.ckpt_step == -1 else f"step{FLAGS.ckpt_step}"
-    if hf_model_name.startswith("EleutherAI") and revision != "main":
-        dataset_filename = f"data/graph_probing/{FLAGS.dataset}-10k-{FLAGS.llm_model_name}-{revision}.csv"
-    else:
-        dataset_filename = f"data/graph_probing/{FLAGS.dataset}-10k-{FLAGS.llm_model_name}.csv"
+
     for i, gpu_id in enumerate(FLAGS.gpu_id):
         p = Process(
             target=run_llm,
@@ -140,6 +155,7 @@ def main(_):
                 layer_list,
                 FLAGS.resume,
                 dir_name,
+                FLAGS.dataset,
             )
         )
         p.start()
