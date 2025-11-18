@@ -46,6 +46,11 @@ def run_llm(
         for _, row in data.iterrows():
             prompt = f"When was the release date of {row['creator']}'s {row['title']}?"
             original_input_texts.append(prompt)
+    elif dataset_name == "world_place":
+        original_input_texts = []
+        for _, row in data.iterrows():
+            prompt = f"What are the lat/lon coordinates of {row['name']}?"
+            original_input_texts.append(prompt)
     else:
         original_input_texts = data["sentences"].to_list()
         
@@ -127,6 +132,8 @@ def main(_):
     
     if FLAGS.dataset == "art":
         dataset_filename = "st_data/art.csv"
+    elif FLAGS.dataset == "world_place":
+        dataset_filename = "st_data/world_place.csv"
     else:
         revision = "main" if FLAGS.ckpt_step == -1 else f"step{FLAGS.ckpt_step}"
         if hf_model_name.startswith("EleutherAI") and revision != "main":
