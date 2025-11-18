@@ -34,12 +34,17 @@ def load_tokenizer_and_model(model_name, ckpt_step, gpu_id):
         padding_side = "right"
     else:
         padding_side = "left"
+    if gpu_id == -1:
+        device_map = "cpu"
+    else:
+        device_map = f"cuda:{gpu_id}"
+
     if ckpt_step == -1:
         tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side=padding_side)
-        model = AutoModelForCausalLM.from_pretrained(model_name, device_map=f"cuda:{gpu_id}")
+        model = AutoModelForCausalLM.from_pretrained(model_name, device_map=device_map)
     else:
         tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side=padding_side, revision=f'step{ckpt_step}')
-        model = AutoModelForCausalLM.from_pretrained(model_name, revision=f'step{ckpt_step}', device_map=f"cuda:{gpu_id}")
+        model = AutoModelForCausalLM.from_pretrained(model_name, revision=f'step{ckpt_step}', device_map=device_map)
     return tokenizer, model
 
 

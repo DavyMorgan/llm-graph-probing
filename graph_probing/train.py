@@ -15,6 +15,7 @@ from utils.model_utils import get_num_nodes
 from utils.probing_model import GCNProbe as GCNRegressor, MLPProbe as MLPRegressor
 
 flags.DEFINE_string("dataset", "openwebtext", "The name of the dataset.")
+flags.DEFINE_string("target", "perplexities", "The target column for regression.")
 flags.DEFINE_string("probe_input", "activation", "The input type for probing: activation, activation_avg, or corr.")
 flags.DEFINE_float("density", 1.0, "The density of the input.")
 flags.DEFINE_boolean("from_sparse_data", False, "Whether to use sparse data.")
@@ -124,19 +125,26 @@ def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler
 
 def main(_):
 
-    device = torch.device(f"cuda:{FLAGS.gpu_id}")
+    if FLAGS.gpu_id == -1:
+        device = torch.device("cpu")
+    else:
+        device = torch.device(f"cuda:{FLAGS.gpu_id}")
 
     if FLAGS.ckpt_step == -1:
-        save_model_name = f"{FLAGS.llm_model_name}"
+        save_model_name = f"{FLAGS.llm_model_name}/{FLAGS.dataset}"
     else:
-        save_model_name = f"{FLAGS.llm_model_name}_step{FLAGS.ckpt_step}"
+        save_model_name = f"{FLAGS.llm_model_name}_step{FLAGS.ckpt_step}/{FLAGS.dataset}"
 
     hf_model_name = hf_model_name_map[FLAGS.llm_model_name]
-    revision = "main" if FLAGS.ckpt_step == -1 else f"step{FLAGS.ckpt_step}"
-    if hf_model_name.startswith("EleutherAI") and revision != "main":
-        dataset_filename = f"data/graph_probing/{FLAGS.dataset}-10k-{FLAGS.llm_model_name}-{revision}.csv"
+    if FLAGS.dataset == "art":
+        assert FLAGS.target == "decade"
+        dataset_filename = "st_data/art.csv"
     else:
-        dataset_filename = f"data/graph_probing/{FLAGS.dataset}-10k-{FLAGS.llm_model_name}.csv"
+        revision = "main" if FLAGS.ckpt_step == -1 else f"step{FLAGS.ckpt_step}"
+        if hf_model_name.startswith("EleutherAI") and revision != "main":
+            dataset_filename = f"data/graph_probing/{FLAGS.dataset}-10k-{FLAGS.llm_model_name}-{revision}.csv"
+        else:
+            dataset_filename = f"data/graph_probing/{FLAGS.dataset}-10k-{FLAGS.llm_model_name}.csv"
 
     if FLAGS.num_layers > 0:
         train_data_loader, test_data_loader = get_brain_network_dataloader(
@@ -152,7 +160,9 @@ def main(_):
             prefetch_factor=FLAGS.prefetch_factor,
             test_set_ratio=FLAGS.test_set_ratio,
             in_memory=FLAGS.in_memory,
-            seed=FLAGS.seed
+            seed=FLAGS.seed,
+            target=FLAGS.target,
+            dataset_name=FLAGS.dataset
         )
         model = GCNRegressor(
             num_nodes=get_num_nodes(FLAGS.llm_model_name, FLAGS.llm_layer),
@@ -175,7 +185,9 @@ def main(_):
             num_workers=FLAGS.num_workers,
             prefetch_factor=FLAGS.prefetch_factor,
             test_set_ratio=FLAGS.test_set_ratio,
-            seed=FLAGS.seed
+            seed=FLAGS.seed,
+            target=FLAGS.target,
+            dataset_name=FLAGS.dataset
         )
         model = MLPRegressor(
             num_nodes=get_num_nodes(FLAGS.llm_model_name, FLAGS.llm_layer, FLAGS.probe_input),
