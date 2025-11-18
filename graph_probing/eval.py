@@ -14,7 +14,7 @@ from utils.model_utils import get_num_nodes
 from utils.probing_model import GCNProbe as GCNRegressor, MLPProbe as MLPRegressor
 
 flags.DEFINE_string("dataset", "openwebtext", "The name of the dataset.")
-flags.DEFINE_string("probe_input", "activation", "The input type for linear probing: activation or corr.")
+flags.DEFINE_string("probe_input", "activation", "The input type for linear probing: activation, activation_avg or corr.")
 flags.DEFINE_float("density", 1.0, "The density of the input.")
 flags.DEFINE_boolean("from_sparse_data", False, "Whether to use sparse data.")
 flags.DEFINE_string("llm_model_name", "gpt2", "The name of the LLM model.")
