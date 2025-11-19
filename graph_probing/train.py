@@ -169,7 +169,7 @@ def main(_):
         normalize_targets = True
     elif FLAGS.dataset == "world_place":
         dataset_filename = "st_data/world_place.csv"
-        target = ["lat", "lon"]
+        target = ["latitude", "longitude"]
         num_output = 2
         normalize_targets = False
     else:
