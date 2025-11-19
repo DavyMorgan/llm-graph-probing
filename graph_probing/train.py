@@ -108,15 +108,15 @@ def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler
         torch.cuda.empty_cache()
 
         if FLAGS.dataset == "world_place":
-            mse, mae, haversine, _, _ = test_fn_space(model, test_data_loader, device, num_layers=FLAGS.num_layers)
+            mse, mae, r2, _, _ = test_fn_space(model, test_data_loader, device, num_layers=FLAGS.num_layers)
             torch.cuda.empty_cache()
-            for metric, value in zip(["mse", "mae", "haversine"], [mse, mae, haversine]):
+            for metric, value in zip(["mse", "mae", "r2"], [mse, mae, r2]):
                 logging.info(f"Test {metric.capitalize()}: {value:.4f}")
                 writer.add_scalar(f"test/{metric}", value, epoch + 1)
             scheduler.step(mse)
 
             if mse < best_metrics["mse"]:
-                for metric, value in zip(["mse", "mae", "haversine"], [mse, mae, haversine]):
+                for metric, value in zip(["mse", "mae", "r2"], [mse, mae, r2]):
                     best_metrics[metric] = value
                 best_metrics["epoch"] = epoch + 1
                 torch.save(model.state_dict(), model_save_path)
