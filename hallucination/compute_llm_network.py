@@ -180,7 +180,7 @@ def run_corr(queue, layer_list, p_save_path, worker_idx, sparse=False, network_d
                     activation = sentence_hidden_states[:, -1]
                     np.save(f"{p_dir_name}/layer_{layer_idx}_activation.npy", activation)
 
-                    activation_avg = activation.mean(-1)
+                    activation_avg = sentence_hidden_states.mean(-1)
                     np.save(f"{p_dir_name}/layer_{layer_idx}_activation_avg.npy", activation_avg)
 
     print(f"Worker {worker_idx} finished processing.")

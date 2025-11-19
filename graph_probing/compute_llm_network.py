@@ -102,7 +102,7 @@ def run_corr(queue, layer_list, p_save_path, worker_idx, network_density=1.0):
                     sentence_hidden_states = layer_hidden_states[sentence_attention_mask == 1].T
                     activation = sentence_hidden_states[:, -1]
                     np.save(f"{p_dir_name}/layer_{layer_idx}_activation.npy", activation)
-                    activation_avg = activation.mean(-1)
+                    activation_avg = sentence_hidden_states.mean(-1)
                     np.save(f"{p_dir_name}/layer_{layer_idx}_activation_avg.npy", activation_avg)
                     corr = np.corrcoef(sentence_hidden_states)
                     if network_density < 1.0:
