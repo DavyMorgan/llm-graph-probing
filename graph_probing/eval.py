@@ -50,9 +50,9 @@ def main(_):
         normalize_targets = True
     elif FLAGS.dataset == "world_place":
         dataset_filename = "st_data/world_place.csv"
-        target = ["latitude", "longitude"]
+        target = ["lat", "lon"]
         num_output = 2
-        normalize_targets = False
+        normalize_targets = True
     else:
         revision = "main" if FLAGS.ckpt_step == -1 else f"step{FLAGS.ckpt_step}"
         if hf_model_name.startswith("EleutherAI") and revision != "main":

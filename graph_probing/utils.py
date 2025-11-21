@@ -74,7 +74,7 @@ def test_fn(model, test_data_loader, device, num_layers):
     return mse, mae, r2, pearsonr, spearmanr, all_y, all_pred
 
 
-def test_fn_space(model, test_data_loader, device, num_layers):
+def test_fn_space(model, test_data_loader, device, num_layers, use_haversine=False):
     model.eval()
     with torch.no_grad():
         total_mse = 0.0
@@ -98,14 +98,20 @@ def test_fn_space(model, test_data_loader, device, num_layers):
             all_pred.append(pred.cpu().detach().numpy())
             all_y.append(target.cpu().detach().numpy())
 
-        all_pred = np.concatenate(all_pred)
-        all_y = np.concatenate(all_y)
+    all_pred = np.concatenate(all_pred)
+    all_y = np.concatenate(all_y)
+    mse = total_mse / num_graphs
+    mae = total_mae / num_graphs
+    r2 = r2_score(all_y, all_pred)
+
+    if use_haversine:
         hav_dist = haversine_distance(all_pred, all_y)
         hav_mse = np.mean(hav_dist**2)
         hav_mae = np.mean(np.abs(hav_dist))
         hav_r2 = haversine_r2(all_pred, all_y)
+        return hav_mse, hav_mae, hav_r2, all_y, all_pred
 
-    return hav_mse, hav_mae, hav_r2, all_y, all_pred
+    return mse, mae, r2, all_y, all_pred
 
 
 def eval_model(model, test_data_loader, device, num_layers):
@@ -120,12 +126,12 @@ def eval_model(model, test_data_loader, device, num_layers):
     return all_y, all_pred
 
 
-def eval_model_space(model, test_data_loader, device, num_layers):
-    hav_mse, hav_mae, hav_r2, all_y, all_pred = test_fn_space(model, test_data_loader, device, num_layers)
+def eval_model_space(model, test_data_loader, device, num_layers, use_haversine=False):
+    mse, mae, r2, all_y, all_pred = test_fn_space(model, test_data_loader, device, num_layers, use_haversine)
     torch.cuda.empty_cache()
-    logging.info(f"Test Haversine MSE: {hav_mse:.4f}")
-    logging.info(f"Test Haversine MAE: {hav_mae:.4f}")
-    logging.info(f"Test Haversine R2: {hav_r2:.4f}")
+    logging.info(f"Test MSE: {mse:.4f}")
+    logging.info(f"Test MAE: {mae:.4f}")
+    logging.info(f"Test R2: {r2:.4f}")
 
     return all_y, all_pred
 
