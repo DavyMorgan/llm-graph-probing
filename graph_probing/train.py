@@ -56,9 +56,9 @@ def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler
         "spearmanr": float("-inf"),
     }
     if FLAGS.dataset == "world_place":
-        mse, mae, haversine, _, _ = test_fn_space(model, test_data_loader, device, num_layers=FLAGS.num_layers)
+        mse, mae, r2, _, _ = test_fn_space(model, test_data_loader, device, num_layers=FLAGS.num_layers)
         torch.cuda.empty_cache()
-        for metric, value in zip(["mse", "mae", "haversine"], [mse, mae, haversine]):
+        for metric, value in zip(["mse", "mae", "r2"], [mse, mae, r2]):
             logging.info(f"Initial Test {metric.capitalize()}: {value:.4f}")
             writer.add_scalar(f"test/{metric}", value, 0)
             best_metrics[metric] = value
