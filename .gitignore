@@ -1,4 +1,5 @@
 data/
 runs/
 saves/
+slurm/
 __pycache__/
