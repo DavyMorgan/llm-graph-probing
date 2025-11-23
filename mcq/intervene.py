@@ -22,6 +22,7 @@ flags.DEFINE_integer("ckpt_step", -1, "The checkpoint step.")
 flags.DEFINE_integer("llm_layer", 12, "The layer of the LLM model.")
 flags.DEFINE_float("intervention_frac", None, "Intervention fraction.")
 flags.DEFINE_integer("intervention_num", None, "Number of nodes to intervene on.")
+flags.DEFINE_boolean("largest", True, "Whether to ablate the largest nodes.")
 flags.DEFINE_multi_integer("gpu_id", [0, 1], "The GPU ID.")
 flags.DEFINE_integer("num_processes", None, "Number of processes. If None, equals number of GPUs.")
 FLAGS = flags.FLAGS
@@ -101,7 +102,8 @@ def run_intervention(
     all_questions,
     all_answers,
     p_question_indices,
-    num_nodes_to_ablate
+    num_nodes_to_ablate,
+    largest
 ):
     original_queue, intervened_queue, r_intervened_queue, random_intervened_queue, w_intervened_queue = queues
     questions = [all_questions[i] for i in p_question_indices[rank]]
@@ -121,7 +123,7 @@ def run_intervention(
     w_activation_inference_hook = partial(
         w_activation_ablation_hook,
         num_nodes_to_ablate=num_nodes_to_ablate,
-        largest=True,
+        largest=largest,
         w_q_norm=w_q_norm
     )
     
@@ -221,7 +223,7 @@ def run_mp_intervention(hf_model_name, inference_hook, r_inference_hook, random_
 
         mp.spawn(
             run_intervention,
-            args=(queues, hf_model_name, FLAGS.ckpt_step, FLAGS.llm_layer, inference_hook, r_inference_hook, random_inference_hook, FLAGS.gpu_id, all_questions, all_answers, p_question_indices, num_nodes_to_ablate),
+            args=(queues, hf_model_name, FLAGS.ckpt_step, FLAGS.llm_layer, inference_hook, r_inference_hook, random_inference_hook, FLAGS.gpu_id, all_questions, all_answers, p_question_indices, num_nodes_to_ablate, FLAGS.largest),
             nprocs=num_processes,
             join=True,
         )
@@ -287,8 +289,8 @@ def main(_):
     p_question_indices = np.array_split(np.arange(len(all_questions)), num_processes)
     
     random_inference_hook = partial(random_ablation_hook, num_nodes=num_nodes, num_nodes_to_ablate=num_nodes_to_ablate)
-    degree_inference_hook = partial(degree_ablation_hook, num_nodes_to_ablate=num_nodes_to_ablate, largest=True)
-    activation_inference_hook = partial(activation_ablation_hook, num_nodes_to_ablate=num_nodes_to_ablate, largest=True)
+    degree_inference_hook = partial(degree_ablation_hook, num_nodes_to_ablate=num_nodes_to_ablate, largest=FLAGS.largest)
+    activation_inference_hook = partial(activation_ablation_hook, num_nodes_to_ablate=num_nodes_to_ablate, largest=FLAGS.largest)
     degree_abl_title = "Degree Abl."
     activation_abl_title = "Activation Abl."
 
