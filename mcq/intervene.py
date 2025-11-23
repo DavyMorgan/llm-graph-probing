@@ -118,8 +118,7 @@ def run_intervention(
     model.tokenizer.pad_token = model.tokenizer.eos_token
     model.tokenizer.padding_side = "left"
 
-    W_Q = model.blocks[layer + 1].attn.W_Q
-    w_q_norm = W_Q.abs().sum(dim=(0, 2))
+    w_q_norm = model.W_Q[layer + 1].abs().sum(dim=(0, 2))
     w_activation_inference_hook = partial(
         w_activation_ablation_hook,
         num_nodes_to_ablate=num_nodes_to_ablate,
