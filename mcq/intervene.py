@@ -25,6 +25,10 @@ flags.DEFINE_integer("intervention_num", None, "Number of nodes to intervene on.
 flags.DEFINE_boolean("largest", True, "Whether to ablate the largest nodes.")
 flags.DEFINE_multi_integer("gpu_id", [0, 1], "The GPU ID.")
 flags.DEFINE_integer("num_processes", None, "Number of processes. If None, equals number of GPUs.")
+flags.DEFINE_boolean("skip_random", False, "Whether to skip random ablation.")
+flags.DEFINE_boolean("skip_degree", False, "Whether to skip degree ablation.")
+flags.DEFINE_boolean("skip_activation", False, "Whether to skip activation ablation.")
+flags.DEFINE_boolean("skip_weighted", False, "Whether to skip weighted activation ablation.")
 FLAGS = flags.FLAGS
 
 
@@ -103,7 +107,11 @@ def run_intervention(
     all_answers,
     p_question_indices,
     num_nodes_to_ablate,
-    largest
+    largest,
+    skip_random,
+    skip_degree,
+    skip_activation,
+    skip_weighted
 ):
     original_queue, intervened_queue, r_intervened_queue, random_intervened_queue, w_intervened_queue = queues
     questions = [all_questions[i] for i in p_question_indices[rank]]
@@ -149,60 +157,75 @@ def run_intervention(
         original_correct.append(int(prediction == answer))
 
         # Intervention
-        intervened_logits = model.run_with_hooks(
-            tokens,
-            return_type="logits",
-            fwd_hooks=[(
-                f"blocks.{layer}.hook_resid_post",
-                inference_hook,
-            )]
-        )
-        last_token_logits = intervened_logits[0, -1, :]
-        choice_logits = last_token_logits[choice_tokens]
-        prediction = torch.argmax(choice_logits).item()
-        intervened_correct.append(int(prediction == answer))
+        if not skip_degree:
+            intervened_logits = model.run_with_hooks(
+                tokens,
+                return_type="logits",
+                fwd_hooks=[(
+                    f"blocks.{layer}.hook_resid_post",
+                    inference_hook,
+                )]
+            )
+            last_token_logits = intervened_logits[0, -1, :]
+            choice_logits = last_token_logits[choice_tokens]
+            prediction = torch.argmax(choice_logits).item()
+            intervened_correct.append(int(prediction == answer))
+        else:
+            intervened_correct.append(0)
+
 
         # Reverse intervention
-        r_intervened_logits = model.run_with_hooks(
-            tokens,
-            return_type="logits",
-            fwd_hooks=[(
-                f"blocks.{layer}.hook_resid_post",
-                r_inference_hook,
-            )]
-        )
-        last_token_logits = r_intervened_logits[0, -1, :]
-        choice_logits = last_token_logits[choice_tokens]
-        prediction = torch.argmax(choice_logits).item()
-        r_intervened_correct.append(int(prediction == answer))
+        if not skip_activation:
+            r_intervened_logits = model.run_with_hooks(
+                tokens,
+                return_type="logits",
+                fwd_hooks=[(
+                    f"blocks.{layer}.hook_resid_post",
+                    r_inference_hook,
+                )]
+            )
+            last_token_logits = r_intervened_logits[0, -1, :]
+            choice_logits = last_token_logits[choice_tokens]
+            prediction = torch.argmax(choice_logits).item()
+            r_intervened_correct.append(int(prediction == answer))
+        else:
+            r_intervened_correct.append(0)
+
 
         # Random intervention
-        random_intervened_logits = model.run_with_hooks(
-            tokens,
-            return_type="logits",
-            fwd_hooks=[(
-                f"blocks.{layer}.hook_resid_post",
-                random_inference_hook,
-            )]
-        )
-        last_token_logits = random_intervened_logits[0, -1, :]
-        choice_logits = last_token_logits[choice_tokens]
-        prediction = torch.argmax(choice_logits).item()
-        random_intervened_correct.append(int(prediction == answer))
+        if not skip_random:
+            random_intervened_logits = model.run_with_hooks(
+                tokens,
+                return_type="logits",
+                fwd_hooks=[(
+                    f"blocks.{layer}.hook_resid_post",
+                    random_inference_hook,
+                )]
+            )
+            last_token_logits = random_intervened_logits[0, -1, :]
+            choice_logits = last_token_logits[choice_tokens]
+            prediction = torch.argmax(choice_logits).item()
+            random_intervened_correct.append(int(prediction == answer))
+        else:
+            random_intervened_correct.append(0)
+
 
         # Weighted activation intervention
-        w_intervened_logits = model.run_with_hooks(
-            tokens,
-            return_type="logits",
-            fwd_hooks=[(
-                f"blocks.{layer}.hook_resid_post",
-                w_activation_inference_hook,
-            )]
-        )
-        last_token_logits = w_intervened_logits[0, -1, :]
-        choice_logits = last_token_logits[choice_tokens]
-        prediction = torch.argmax(choice_logits).item()
-        w_intervened_correct.append(int(prediction == answer))
+        if not skip_weighted:
+            w_intervened_logits = model.run_with_hooks(
+                tokens,
+                return_type="logits",
+                fwd_hooks=[(
+                    f"blocks.{layer}.hook_resid_post",
+                    w_activation_inference_hook,
+                )]
+            )
+            last_token_logits = w_intervened_logits[0, -1, :]
+            choice_logits = last_token_logits[choice_tokens]
+            prediction = torch.argmax(choice_logits).item()
+            w_intervened_correct.append(int(prediction == answer))
+        else:
+            w_intervened_correct.append(0)
 
     original_queue.put((rank, original_correct))
     intervened_queue.put((rank, intervened_correct))
@@ -222,7 +245,7 @@ def run_mp_intervention(hf_model_name, inference_hook, r_inference_hook, random_
 
         mp.spawn(
             run_intervention,
-            args=(queues, hf_model_name, FLAGS.ckpt_step, FLAGS.llm_layer, inference_hook, r_inference_hook, random_inference_hook, FLAGS.gpu_id, all_questions, all_answers, p_question_indices, num_nodes_to_ablate, FLAGS.largest),
+            args=(queues, hf_model_name, FLAGS.ckpt_step, FLAGS.llm_layer, inference_hook, r_inference_hook, random_inference_hook, FLAGS.gpu_id, all_questions, all_answers, p_question_indices, num_nodes_to_ablate, FLAGS.largest, FLAGS.skip_random, FLAGS.skip_degree, FLAGS.skip_activation, FLAGS.skip_weighted),
             nprocs=num_processes,
             join=True,
         )
@@ -297,21 +320,41 @@ def main(_):
     
     print(f"Original correct ratio: {original_correct_ratio:.4f}")
     print("="*20)
-    print(f"{degree_abl_title} correct ratio: {degree_intervened_correct_ratio:.4f} ({(degree_intervened_correct_ratio - original_correct_ratio) / original_correct_ratio * 100:+.2f}%)")
-    print(f"{activation_abl_title} correct ratio: {activation_intervened_correct_ratio:.4f} ({(activation_intervened_correct_ratio - original_correct_ratio) / original_correct_ratio * 100:+.2f}%)")
-    print(f"Weighted Activation Abl. correct ratio: {w_intervened_correct_ratio:.4f} ({(w_intervened_correct_ratio - original_correct_ratio) / original_correct_ratio * 100:+.2f}%)")
-    print(f"Random Abl. correct ratio: {random_intervened_correct_ratio:.4f} ({(random_intervened_correct_ratio - original_correct_ratio) / original_correct_ratio * 100:+.2f}%)")
-
-    rel_drop_diff = (random_intervened_correct_ratio - degree_intervened_correct_ratio) / original_correct_ratio * 100 if original_correct_ratio > 0 else 0
-    targeted_change = degree_intervened_correct_ratio - original_correct_ratio
-    random_change = random_intervened_correct_ratio - original_correct_ratio
-    if random_change != 0:
-        ratio = targeted_change / random_change
-    else:
-        ratio = np.nan
     
-    print(f"Targeted-Random Drop (%): {rel_drop_diff:.2f}")
-    print(f"Targeted/Random Ratio: {ratio:.2f}" if not np.isnan(ratio) else "nan")
+    if not FLAGS.skip_degree:
+        print(f"{degree_abl_title} correct ratio: {degree_intervened_correct_ratio:.4f} ({(degree_intervened_correct_ratio - original_correct_ratio) / original_correct_ratio * 100:+.2f}%)")
+    else:
+        print(f"{degree_abl_title} correct ratio: Skipped")
+
+    if not FLAGS.skip_activation:
+        print(f"{activation_abl_title} correct ratio: {activation_intervened_correct_ratio:.4f} ({(activation_intervened_correct_ratio - original_correct_ratio) / original_correct_ratio * 100:+.2f}%)")
+    else:
+        print(f"{activation_abl_title} correct ratio: Skipped")
+
+    if not FLAGS.skip_weighted:
+        print(f"Weighted Activation Abl. correct ratio: {w_intervened_correct_ratio:.4f} ({(w_intervened_correct_ratio - original_correct_ratio) / original_correct_ratio * 100:+.2f}%)")
+    else:
+        print(f"Weighted Activation Abl. correct ratio: Skipped")
+
+    if not FLAGS.skip_random:
+        print(f"Random Abl. correct ratio: {random_intervened_correct_ratio:.4f} ({(random_intervened_correct_ratio - original_correct_ratio) / original_correct_ratio * 100:+.2f}%)")
+    else:
+        print(f"Random Abl. correct ratio: Skipped")
+
+    if not FLAGS.skip_degree and not FLAGS.skip_random:
+        rel_drop_diff = (random_intervened_correct_ratio - degree_intervened_correct_ratio) / original_correct_ratio * 100 if original_correct_ratio > 0 else 0
+        targeted_change = degree_intervened_correct_ratio - original_correct_ratio
+        random_change = random_intervened_correct_ratio - original_correct_ratio
+        if random_change != 0:
+            ratio = targeted_change / random_change
+        else:
+            ratio = np.nan
+        
+        print(f"Targeted-Random Drop (%): {rel_drop_diff:.2f}")
+        print(f"Targeted/Random Ratio: {ratio:.2f}" if not np.isnan(ratio) else "nan")
+    else:
+        print("Targeted-Random Drop (%): Skipped")
+        print("Targeted/Random Ratio: Skipped")
 
 
 if __name__ == "__main__":
