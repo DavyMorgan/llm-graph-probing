@@ -74,9 +74,22 @@ def activation_ablation_hook(
     return value
 
 
+def w_activation_ablation_hook(
+    value,
+    hook,
+    num_nodes_to_ablate,
+    largest,
+    w_q_norm
+):
+    time_series = value[0].transpose(-2, -1) # D * T
+    activation = torch.norm(time_series, p=2, dim=-1)
+    score = activation * w_q_norm
+    _, index_to_ablate_top = torch.topk(score, num_nodes_to_ablate, largest=largest)
+    value[:, :, index_to_ablate_top] = 0.0
+    return value
+
 def run_intervention(
     rank,
-    dataset,
     queues,
     model_name,
     ckpt_step,
@@ -87,9 +100,10 @@ def run_intervention(
     gpu_ids,
     all_questions,
     all_answers,
-    p_question_indices
+    p_question_indices,
+    num_nodes_to_ablate
 ):
-    original_queue, intervened_queue, r_intervened_queue, random_intervened_queue = queues
+    original_queue, intervened_queue, r_intervened_queue, random_intervened_queue, w_intervened_queue = queues
     questions = [all_questions[i] for i in p_question_indices[rank]]
     answers = [all_answers[i] for i in p_question_indices[rank]]
 
@@ -101,6 +115,15 @@ def run_intervention(
     
     model.tokenizer.pad_token = model.tokenizer.eos_token
     model.tokenizer.padding_side = "left"
+
+    W_Q = model.blocks[layer + 1].attn.W_Q
+    w_q_norm = W_Q.abs().sum(dim=(0, 2))
+    w_activation_inference_hook = partial(
+        w_activation_ablation_hook,
+        num_nodes_to_ablate=num_nodes_to_ablate,
+        largest=True,
+        w_q_norm=w_q_norm
+    )
     
     choice_tokens = [model.tokenizer.encode(c, add_special_tokens=False)[0] for c in ['A', 'B', 'C', 'D']]
 
@@ -108,6 +131,7 @@ def run_intervention(
     intervened_correct = []
     r_intervened_correct = []
     random_intervened_correct = []
+    w_intervened_correct = []
 
     for i in tqdm(range(len(questions)), position=rank, desc=f"Worker {rank}"):
         question = questions[i]
@@ -165,25 +189,39 @@ def run_intervention(
         prediction = torch.argmax(choice_logits).item()
         random_intervened_correct.append(int(prediction == answer))
 
+        # Weighted activation intervention
+        w_intervened_logits = model.run_with_hooks(
+            tokens,
+            return_type="logits",
+            fwd_hooks=[(
+                f"blocks.{layer}.hook_resid_post",
+                w_activation_inference_hook,
+            )]
+        )
+        last_token_logits = w_intervened_logits[0, -1, :]
+        choice_logits = last_token_logits[choice_tokens]
+        prediction = torch.argmax(choice_logits).item()
+        w_intervened_correct.append(int(prediction == answer))
+
     original_queue.put((rank, original_correct))
     intervened_queue.put((rank, intervened_correct))
     r_intervened_queue.put((rank, r_intervened_correct))
     random_intervened_queue.put((rank, random_intervened_correct))
+    w_intervened_queue.put((rank, w_intervened_correct))
 
 
-def run_mp_intervention(hf_model_name, inference_hook, r_inference_hook, random_inference_hook, all_questions, all_answers, p_question_indices, num_processes):
+def run_mp_intervention(hf_model_name, inference_hook, r_inference_hook, random_inference_hook, all_questions, all_answers, p_question_indices, num_processes, num_nodes_to_ablate):
     with mp.Manager() as manager:
         original_queue = manager.Queue()
         intervened_queue = manager.Queue()
         r_intervened_queue = manager.Queue()
         random_intervened_queue = manager.Queue()
-        queues = (original_queue, intervened_queue, r_intervened_queue, random_intervened_queue)
-
-        dataset = FLAGS.dataset_filename.split("/")[-1].replace(".csv", "").split("test")[0]
+        w_intervened_queue = manager.Queue()
+        queues = (original_queue, intervened_queue, r_intervened_queue, random_intervened_queue, w_intervened_queue)
 
         mp.spawn(
             run_intervention,
-            args=(dataset, queues, hf_model_name, FLAGS.ckpt_step, FLAGS.llm_layer, inference_hook, r_inference_hook, random_inference_hook, FLAGS.gpu_id, all_questions, all_answers, p_question_indices),
+            args=(queues, hf_model_name, FLAGS.ckpt_step, FLAGS.llm_layer, inference_hook, r_inference_hook, random_inference_hook, FLAGS.gpu_id, all_questions, all_answers, p_question_indices, num_nodes_to_ablate),
             nprocs=num_processes,
             join=True,
         )
@@ -192,6 +230,7 @@ def run_mp_intervention(hf_model_name, inference_hook, r_inference_hook, random_
         intervened_mp_results = [intervened_queue.get() for _ in range(num_processes)]
         r_intervened_mp_results = [r_intervened_queue.get() for _ in range(num_processes)]
         random_intervened_mp_results = [random_intervened_queue.get() for _ in range(num_processes)]
+        w_intervened_mp_results = [w_intervened_queue.get() for _ in range(num_processes)]
 
     original_mp_results.sort(key=lambda x: x[0])
     original_correct = []
@@ -217,7 +256,13 @@ def run_mp_intervention(hf_model_name, inference_hook, r_inference_hook, random_
         random_intervened_correct.extend(l)
     random_intervened_correct_ratio = np.mean(random_intervened_correct)
 
-    return original_correct_ratio, intervened_correct_ratio, r_intervened_correct_ratio, random_intervened_correct_ratio, original_correct, intervened_correct, r_intervened_correct, random_intervened_correct
+    w_intervened_mp_results.sort(key=lambda x: x[0])
+    w_intervened_correct = []
+    for _, l in w_intervened_mp_results:
+        w_intervened_correct.extend(l)
+    w_intervened_correct_ratio = np.mean(w_intervened_correct)
+
+    return original_correct_ratio, intervened_correct_ratio, r_intervened_correct_ratio, random_intervened_correct_ratio, w_intervened_correct_ratio, original_correct, intervened_correct, r_intervened_correct, random_intervened_correct, w_intervened_correct
 
 
 def main(_):
@@ -247,12 +292,13 @@ def main(_):
     degree_abl_title = "Degree Abl."
     activation_abl_title = "Activation Abl."
 
-    original_correct_ratio, degree_intervened_correct_ratio, activation_intervened_correct_ratio, random_intervened_correct_ratio, original_correct, degree_intervened_correct, activation_intervened_correct, random_intervened_correct = run_mp_intervention(hf_model_name, degree_inference_hook, activation_inference_hook, random_inference_hook, all_questions, all_answers, p_question_indices, num_processes)
+    original_correct_ratio, degree_intervened_correct_ratio, activation_intervened_correct_ratio, random_intervened_correct_ratio, w_intervened_correct_ratio, original_correct, degree_intervened_correct, activation_intervened_correct, random_intervened_correct, w_intervened_correct = run_mp_intervention(hf_model_name, degree_inference_hook, activation_inference_hook, random_inference_hook, all_questions, all_answers, p_question_indices, num_processes, num_nodes_to_ablate)
     
     print(f"Original correct ratio: {original_correct_ratio:.4f}")
     print("="*20)
     print(f"{degree_abl_title} correct ratio: {degree_intervened_correct_ratio:.4f} ({(degree_intervened_correct_ratio - original_correct_ratio) / original_correct_ratio * 100:+.2f}%)")
     print(f"{activation_abl_title} correct ratio: {activation_intervened_correct_ratio:.4f} ({(activation_intervened_correct_ratio - original_correct_ratio) / original_correct_ratio * 100:+.2f}%)")
+    print(f"Weighted Activation Abl. correct ratio: {w_intervened_correct_ratio:.4f} ({(w_intervened_correct_ratio - original_correct_ratio) / original_correct_ratio * 100:+.2f}%)")
     print(f"Random Abl. correct ratio: {random_intervened_correct_ratio:.4f} ({(random_intervened_correct_ratio - original_correct_ratio) / original_correct_ratio * 100:+.2f}%)")
 
     rel_drop_diff = (random_intervened_correct_ratio - degree_intervened_correct_ratio) / original_correct_ratio * 100 if original_correct_ratio > 0 else 0
