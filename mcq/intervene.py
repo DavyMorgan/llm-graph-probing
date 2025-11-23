@@ -330,22 +330,22 @@ def main(_):
     print("="*20)
     
     if not FLAGS.skip_degree:
-        print(f"{degree_abl_title} correct ratio: {degree_intervened_correct_ratio:.4f} ({(degree_intervened_correct_ratio - original_correct_ratio) / original_correct_ratio * 100:+.2f if not FLAGS.skip_original else 'N/A'}%)")
+        print(f"{degree_abl_title} correct ratio: {degree_intervened_correct_ratio:.4f}")
     else:
         print(f"{degree_abl_title} correct ratio: Skipped")
 
     if not FLAGS.skip_activation:
-        print(f"{activation_abl_title} correct ratio: {activation_intervened_correct_ratio:.4f} ({(activation_intervened_correct_ratio - original_correct_ratio) / original_correct_ratio * 100:+.2f if not FLAGS.skip_original else 'N/A'}%)")
+        print(f"{activation_abl_title} correct ratio: {activation_intervened_correct_ratio:.4f}")
     else:
         print(f"{activation_abl_title} correct ratio: Skipped")
 
     if not FLAGS.skip_weighted:
-        print(f"Weighted Activation Abl. correct ratio: {w_intervened_correct_ratio:.4f} ({(w_intervened_correct_ratio - original_correct_ratio) / original_correct_ratio * 100:+.2f if not FLAGS.skip_original else 'N/A'}%)")
+        print(f"Weighted Activation Abl. correct ratio: {w_intervened_correct_ratio:.4f}")
     else:
         print(f"Weighted Activation Abl. correct ratio: Skipped")
 
     if not FLAGS.skip_random:
-        print(f"Random Abl. correct ratio: {random_intervened_correct_ratio:.4f} ({(random_intervened_correct_ratio - original_correct_ratio) / original_correct_ratio * 100:+.2f if not FLAGS.skip_original else 'N/A'}%)")
+        print(f"Random Abl. correct ratio: {random_intervened_correct_ratio:.4f}")
     else:
         print(f"Random Abl. correct ratio: Skipped")
 
