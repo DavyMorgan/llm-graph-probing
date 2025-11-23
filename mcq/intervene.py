@@ -25,6 +25,7 @@ flags.DEFINE_integer("intervention_num", None, "Number of nodes to intervene on.
 flags.DEFINE_boolean("largest", True, "Whether to ablate the largest nodes.")
 flags.DEFINE_multi_integer("gpu_id", [0, 1], "The GPU ID.")
 flags.DEFINE_integer("num_processes", None, "Number of processes. If None, equals number of GPUs.")
+flags.DEFINE_boolean("skip_original", False, "Whether to skip original inference.")
 flags.DEFINE_boolean("skip_random", False, "Whether to skip random ablation.")
 flags.DEFINE_boolean("skip_degree", False, "Whether to skip degree ablation.")
 flags.DEFINE_boolean("skip_activation", False, "Whether to skip activation ablation.")
@@ -108,6 +109,7 @@ def run_intervention(
     p_question_indices,
     num_nodes_to_ablate,
     largest,
+    skip_original,
     skip_random,
     skip_degree,
     skip_activation,
@@ -126,7 +128,7 @@ def run_intervention(
     model.tokenizer.pad_token = model.tokenizer.eos_token
     model.tokenizer.padding_side = "left"
 
-    w_q_norm = model.W_Q[layer + 1].abs().sum(dim=(0, 2))
+    w_q_norm = model.W_V[layer + 1].abs().sum(dim=(0, 2))
     w_activation_inference_hook = partial(
         w_activation_ablation_hook,
         num_nodes_to_ablate=num_nodes_to_ablate,
@@ -150,11 +152,14 @@ def run_intervention(
         tokens = model.to_tokens(text).to(torch.device(f"cuda:{gpu_id}"))
 
         # Original
-        logits = model(tokens, return_type="logits")
-        last_token_logits = logits[0, -1, :]
-        choice_logits = last_token_logits[choice_tokens]
-        prediction = torch.argmax(choice_logits).item()
-        original_correct.append(int(prediction == answer))
+        if not skip_original:
+            logits = model(tokens, return_type="logits")
+            last_token_logits = logits[0, -1, :]
+            choice_logits = last_token_logits[choice_tokens]
+            prediction = torch.argmax(choice_logits).item()
+            original_correct.append(int(prediction == answer))
+        else:
+            original_correct.append(0)
 
         # Intervention
         if not skip_degree:
@@ -245,7 +250,7 @@ def run_mp_intervention(hf_model_name, inference_hook, r_inference_hook, random_
 
         mp.spawn(
             run_intervention,
-            args=(queues, hf_model_name, FLAGS.ckpt_step, FLAGS.llm_layer, inference_hook, r_inference_hook, random_inference_hook, FLAGS.gpu_id, all_questions, all_answers, p_question_indices, num_nodes_to_ablate, FLAGS.largest, FLAGS.skip_random, FLAGS.skip_degree, FLAGS.skip_activation, FLAGS.skip_weighted),
+            args=(queues, hf_model_name, FLAGS.ckpt_step, FLAGS.llm_layer, inference_hook, r_inference_hook, random_inference_hook, FLAGS.gpu_id, all_questions, all_answers, p_question_indices, num_nodes_to_ablate, FLAGS.largest, FLAGS.skip_original, FLAGS.skip_random, FLAGS.skip_degree, FLAGS.skip_activation, FLAGS.skip_weighted),
             nprocs=num_processes,
             join=True,
         )
@@ -318,26 +323,29 @@ def main(_):
 
     original_correct_ratio, degree_intervened_correct_ratio, activation_intervened_correct_ratio, random_intervened_correct_ratio, w_intervened_correct_ratio, original_correct, degree_intervened_correct, activation_intervened_correct, random_intervened_correct, w_intervened_correct = run_mp_intervention(hf_model_name, degree_inference_hook, activation_inference_hook, random_inference_hook, all_questions, all_answers, p_question_indices, num_processes, num_nodes_to_ablate)
     
-    print(f"Original correct ratio: {original_correct_ratio:.4f}")
+    if not FLAGS.skip_original:
+        print(f"Original correct ratio: {original_correct_ratio:.4f}")
+    else:
+        print(f"Original correct ratio: Skipped")
     print("="*20)
     
     if not FLAGS.skip_degree:
-        print(f"{degree_abl_title} correct ratio: {degree_intervened_correct_ratio:.4f} ({(degree_intervened_correct_ratio - original_correct_ratio) / original_correct_ratio * 100:+.2f}%)")
+        print(f"{degree_abl_title} correct ratio: {degree_intervened_correct_ratio:.4f} ({(degree_intervened_correct_ratio - original_correct_ratio) / original_correct_ratio * 100:+.2f if not FLAGS.skip_original else 'N/A'}%)")
     else:
         print(f"{degree_abl_title} correct ratio: Skipped")
 
     if not FLAGS.skip_activation:
-        print(f"{activation_abl_title} correct ratio: {activation_intervened_correct_ratio:.4f} ({(activation_intervened_correct_ratio - original_correct_ratio) / original_correct_ratio * 100:+.2f}%)")
+        print(f"{activation_abl_title} correct ratio: {activation_intervened_correct_ratio:.4f} ({(activation_intervened_correct_ratio - original_correct_ratio) / original_correct_ratio * 100:+.2f if not FLAGS.skip_original else 'N/A'}%)")
     else:
         print(f"{activation_abl_title} correct ratio: Skipped")
 
     if not FLAGS.skip_weighted:
-        print(f"Weighted Activation Abl. correct ratio: {w_intervened_correct_ratio:.4f} ({(w_intervened_correct_ratio - original_correct_ratio) / original_correct_ratio * 100:+.2f}%)")
+        print(f"Weighted Activation Abl. correct ratio: {w_intervened_correct_ratio:.4f} ({(w_intervened_correct_ratio - original_correct_ratio) / original_correct_ratio * 100:+.2f if not FLAGS.skip_original else 'N/A'}%)")
     else:
         print(f"Weighted Activation Abl. correct ratio: Skipped")
 
     if not FLAGS.skip_random:
-        print(f"Random Abl. correct ratio: {random_intervened_correct_ratio:.4f} ({(random_intervened_correct_ratio - original_correct_ratio) / original_correct_ratio * 100:+.2f}%)")
+        print(f"Random Abl. correct ratio: {random_intervened_correct_ratio:.4f} ({(random_intervened_correct_ratio - original_correct_ratio) / original_correct_ratio * 100:+.2f if not FLAGS.skip_original else 'N/A'}%)")
     else:
         print(f"Random Abl. correct ratio: Skipped")
 
