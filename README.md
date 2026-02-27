@@ -1,6 +1,6 @@
 # LLM Graph Probing
 
-Graph probing is a tool for learning the functional connectivity topology of neurons in large language models (LLMs) and relating it to language generation performance. The project was initially described in the paper [***"Learning Neural Topology of Language Models with Graph Probing"***](https://arxiv.org/abs/2506.01042).
+Graph probing is a tool for learning the functional connectivity topology of neurons in large language models (LLMs) and relating it to language generation performance.
 
 ![Loading Model Overview](assets/graph_probing.png "Model Overview")
 ---
@@ -180,17 +180,6 @@ Evaluation will be performed automatically during and after training. You can al
 python -m graph_matching.eval --dataset_filename <dataset_filename> --llm_model_name_1 <model_name_1> --llm_model_name_2 <model_name_2> --llm_layer_1 <layer_id_1> --llm_layer_2 <layer_id_2> --batch_size <batch_size> --eval_batch_size <eval_batch_size> --num_channels <num_channels> --num_layers <num_layers>
 ```
 All parameters are the same as previous steps.
-
-## Citation
-If you use this code in your project, please consider citing the following paper:
-```bibtex
-@article{zheng2025probing,
-  title={Probing Neural Topology of Large Language Models}, 
-  author={Zheng, Yu and Yuan, Yuan and Li, Yong and Santi, Paolo},
-  journal={arXiv preprint arXiv:2506.01042},
-  year={2025}
-}
-```
 
 ## License
 Please see the [license](LICENSE) for further details.
